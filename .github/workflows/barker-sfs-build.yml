@@ -21,7 +21,7 @@ jobs:
           apt-get update
           apt-get install -y \
             busybox \
-            squashfs-tools wget xz-utils ca-certificates binutils \
+            squashfs-tools wget xz-utils ca-certificates \
             wget kmod curl
 
       - name: Building main sfs file
@@ -29,13 +29,10 @@ jobs:
         run: |
         
               . ./DISTRO_SPECS
-              
-              # Export every variable in the file to GitHub Actions env
-              while IFS='=' read -r key value; do
-               if [ ! -z "$key" ]; then
-                 echo "$key=$value" >> $GITHUB_ENV
-               fi
-              done < ./DISTRO_SPECS
+
+              echo "DISTRO_NAME=$DISTRO_NAME" >>  $GITHUB_ENV
+              echo "DISTRO_VERSION=$DISTRO_VERSION" >>  $GITHUB_ENV
+              echo "DISTRO_PUPPYSFS=$DISTRO_PUPPYSFS" >>  $GITHUB_ENV
               
               chmod +x ./01-build-debian-puppy.sh
               ./01-build-debian-puppy.sh
@@ -47,4 +44,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DISTRO_NAME }} ${{ env.DISTRO_VERSION }} main SFS file
-          path: puppy-livecd-build/puppy_${{ env.DISTRO_NAME }}_${{ env.DISTRO_VERSION }}.sfs         
+          path: puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}         

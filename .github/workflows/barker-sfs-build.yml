@@ -41,9 +41,13 @@ jobs:
               clear
               chmod +x ./03-pack-sfs.sh
               ./03-pack-sfs.sh
-              
+              chmod +x ./04-process-initrd.sh
+              ./04-process-initrd.sh
+              tar -cJf $DISTRO_NAME-$DISTRO_VERSION.tar.xz -C puppy-livecd-build .              
+
       - name: Upload main puppy sfs file
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DISTRO_NAME }} ${{ env.DISTRO_VERSION }} main SFS file
-          path: puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}         
+          path: ${{ env.DISTRO_PUPPYSFS }}-${{ env.DISTRO_VERSION }}.tar.xz
+          compression-level: 0 

@@ -1,0 +1,16 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# gtkdialog (main branch)
+wget -t 3 -T 60 -O pm13tray.c https://raw.githubusercontent.com/rizalmart/puppy-pm13tray/refs/heads/main/pm13tray.c
+
+gcc -Wall pm13tray.c `pkg-config --cflags --libs ayatana-appindicator3-0.1 gtk+-3.0` -o /usr/local/bin/pm13tray
+
+strip --strip-unneeded /usr/local/bin/pm13tray

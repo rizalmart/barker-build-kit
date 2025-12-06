@@ -1,0 +1,45 @@
+#!/bin/bash
+#dependency file list generator
+#written by mistfire
+
+find_deps(){
+ 
+ ELF1="$1"
+ 
+ 
+ for sofile in $(ldd "$ELF1" | grep ".so" | grep '=>' | awk '{print $3}' | grep -v 'not found' | uniq | sort)
+ do
+    
+   sofileptn="$(echo $sofile | sed -e 's#\.#\\\.#g' -e 's#\-#\\\-#g' -e 's#\+#\\\+#g')"
+ 
+   if [ ! -e "$DEPFILE" ]; then
+    echo "$sofile" > $DEPFILE
+    find_deps "$sofile"
+   elif [ "$(grep "$sofileptn" $DEPFILE)" == "" ]; then
+    echo "$sofile" >> $DEPFILE
+    find_deps "$sofile"
+   fi
+   
+ done
+
+}
+
+
+
+[ "$1" == "" ] && exit
+[ ! -e "$1" ] && exit
+
+export DEPFILE="$HOME/$(basename $1).deps"
+
+[ -e $DEPFILE ] && rm -f $DEPFILE
+
+echo "Searching for dependencies..."
+
+find_deps "$1"
+
+cat $DEPFILE | sort | uniq > $DEPFILE.new
+
+mv -f $DEPFILE.new $DEPFILE
+
+echo "Dependency list created: $HOME/$(basename $1).deps"
+

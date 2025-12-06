@@ -1,0 +1,22 @@
+The .sfs in this iso are as follows:
+
+adrv contains the web browser
+
+bdrv contains the media player
+
+fdrv contains a selection of firmware **
+
+gdrv contains sane, gutenprint, and gegl
+
+ndrv contains the locales
+
+xdrv contains the bluetooth manager and python-based application
+
+ydrv contains the mesa dri drivers and some mesa libraries
+
+zdrv contains the kernel in association with vmlinuz
+
+** To obtain a more comprehensive set of firmware download the latest sfs from:
+http://www.fishprogs.software/puppy/firmware-sfs/
+
+and rename it to the same fdrv name

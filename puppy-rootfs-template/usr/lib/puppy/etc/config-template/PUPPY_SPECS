@@ -1,0 +1,4 @@
+#This is for extra parameters for puppy
+
+#This is means running a full linux distro on top of puppy mechanism
+HYBRID_DISTRO='no'

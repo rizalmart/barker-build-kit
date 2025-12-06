@@ -1,0 +1,104 @@
+#! /bin/bash -x
+# Create Symlink is a symbolic link creator for use as a right click menu application
+# capable of creating relative and absolute symlinks.
+# Shown as "Create Symlink" in Thunar custom commands menu.
+# createsym-1.0
+# By rg66 and Geoffrey
+# 21/01/2015
+#
+
+NAME="`basename "$1"`"
+DIR="`dirname "$1"`"
+
+TEXT1="Relative Links are used in the same directory, 
+be sure to rename the link."
+ 
+TEXT2="Absolute Links can be placed in any other directory,
+there is no need to rename them unless required."
+
+error_msg() {
+	icon='dialog-error'
+	yad --fixed --title="$NAME" --window-icon=$icon \
+		--on-top --center \
+		--image=$icon --image-on-top \
+		--text="\n <b>$1\n$2\n$3</b> \n" \
+		--button="gtk-close:1"
+}
+ 
+export MAIN_DIALOG='
+<window title="Create Symlink" icon-name="emblem-symbolic-link" width-request="255" resizable="false">
+<vbox>
+  <frame>
+  <hbox space-fill="true" space-expand="false" homogeneous="true">       
+    <entry>
+      <default>"'$NAME'"</default>
+      <variable>SYMNAME</variable>           
+    </entry> 
+  </hbox>
+  <hbox space-fill="true" space-expand="false" homogeneous="true">
+    <radiobutton tooltip-markup="'$TEXT1'">
+     <variable>REL</variable>
+     <label>Relative Link</label>
+     <action>hide:HIDE</action>
+    </radiobutton>
+    <radiobutton tooltip-markup="'$TEXT2'">
+     <label>Absolute Link</label>
+     <action>show:HIDE</action>
+    </radiobutton>
+  </hbox>
+  <hbox visible="false">	
+    <entry fs-action="folder" fs-title="Select Directory">
+      <default>"'$DIR'"</default>
+	  <variable>SYMDIR</variable>
+	</entry>
+    <button active="false">	
+	  <input file stock="gtk-open"></input>
+	  <action>fileselect:SYMDIR</action>
+	</button>
+    <variable>HIDE</variable> 
+  </hbox> 
+  </frame>
+   <hbox space-fill="false" space-expand="false"> 
+   <hbox>
+      <button width-request="85" use-underline="true">
+      <label>_OK</label>
+	  <input file stock="gtk-ok"></input>
+	  <action type="exit">OK</action>
+    </button>
+      <button width-request="85" use-underline="true">
+      <label>_QUIT</label>
+	  <input file stock="gtk-cancel"></input>
+	  <action type="exit">cancel</action>
+    </button>
+  </hbox> 
+  </hbox>
+</vbox>
+</window>'
+
+I=$IFS; IFS=""
+for STATEMENTS in  $(gtkdialog --center --program=MAIN_DIALOG); do
+   eval $STATEMENTS
+done
+IFS=$I 
+
+if [ "$EXIT" = "OK" ]; then
+[ "$REL" = "true" ] && SYMDIR="$DIR"
+[ "$REL" = "true" -a "$NAME" = "$SYMNAME" ] && error_msg "Choose a different name" && exit
+[ "$REL" = "false" -a "$DIR" = "$SYMDIR" ] && error_msg "Choose a different directory" && exit
+[ "$REL" = "true" ] && R="r" || R=""
+
+if [ ! -e $SYMDIR ]; then
+error_msg "Directory not exists. Choose a different directory"
+exit
+fi
+
+if [ ! -w $SYMDIR ]; then
+error_msg "Folder permission denied. Choose a different directory"
+exit
+fi
+
+ln -s$R "$1" "$SYMDIR/$SYMNAME"
+
+else
+  exit 0
+fi

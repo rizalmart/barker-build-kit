@@ -1,0 +1,126 @@
+#!/bin/sh
+#Update puppy builtin package
+#written by mistfire
+
+PUPMODE=""
+
+[ -e /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+if [ "$(echo "$@" | grep "\-\-forced")" != "" ]; then
+   
+    . /etc/DISTRO_SPECS
+    
+    REPODIR=/var/packages/repos
+    
+    ARCH=`uname -m`
+    [ "$ARCH" = "x86_64" ] && X=64 || X=
+    
+	if [ "$DISTRO_COMPAT_VERSION" == "current" ]; then
+	 echo "Deleting Packages-slackware${X}-$DISTRO_COMPAT_VERSION ..."
+	 rm -f $REPODIR/Packages-slackware${X}-$DISTRO_COMPAT_VERSION 2>/dev/null
+	else
+	 echo "Deleting Packages-slackware${X}-$DISTRO_COMPAT_VERSION-patches ..."
+	 rm -f $REPODIR/Packages-slackware${X}-$DISTRO_COMPAT_VERSION-patches 2>/dev/null
+	fi
+
+	if [ -e /var/packages/CHECKSUMS.md5.asc ]; then
+	 echo "Deleting checksum file..."
+	 rm -f /var/packages/CHECKSUMS.md5.asc 2>/dev/null
+    fi
+    
+    rm -f $REPODIR/Packages-slackware${X}-slackers 2>/dev/null
+    touch $REPODIR/Packages-slackware${X}-slackers
+    rm -f /var/packages/CHECKSUMS-slackers.md5.asc 2>/dev/null
+    
+    rm -f $REPODIR/Packages-slackware${X}-slackel 2>/dev/null
+    touch $REPODIR/Packages-slackware${X}-slackel
+    rm -f /var/packages/CHECKSUMS-slackel.md5.asc 2>/dev/null
+    
+fi
+
+[ "$PUPMODE" == "" ] && echo "nameserver 8.8.8.8" > /etc/resolv.conf
+
+#[ "$(which slackdep-fetcher)" != "" ] && slackdep-fetcher
+
+updates_mgr --list-only
+
+if [ -e /tmp/pkg-updates.txt ]; then
+# cat /tmp/pkg-updates.txt | xargs -i pkg download '{}'
+ 
+  for ipkg in $(cat /tmp/pkg-updates.txt | tr '\n' ' ')
+  do
+       
+     pkg download $ipkg
+        
+	 if [ "$(pkg list-deps $ipkg | xargs)" != "" ]; then 
+	  echo "Resolving dependencies for $ipkg ..."
+	  for dep in $(pkg list-deps $ipkg)
+	  do
+	   #if [ "$(pkg lb | sed -e "s#-[0-9].*\$##g" | grep -E "^$dep\$")" == "" ] && [ "$(pkg li | sed -e "s#-[0-9].*\$##g" | grep -E "^$dep\$")" == "" ]; then 
+		pkg download $dep
+	   #fi
+	  done
+	 fi
+       
+  done
+ 
+ install-preload /root/pkg
+ 
+fi
+
+rm -f /tmp/pkg-updates.txt 2>/dev/null
+
+updates_mgr_slackers --list-only
+
+if [ -e /tmp/pkg-updates.txt ]; then
+# cat /tmp/pkg-updates.txt | xargs -i pkg download '{}'
+ 
+  for ipkg in $(cat /tmp/pkg-updates.txt | tr '\n' ' ')
+  do
+       
+     pkg download $ipkg
+        
+	 if [ "$(pkg list-deps $ipkg | xargs)" != "" ]; then 
+	  echo "Resolving dependencies for $ipkg ..."
+	  for dep in $(pkg list-deps $ipkg)
+	  do
+	   #if [ "$(pkg lb | sed -e "s#-[0-9].*\$##g" | grep -E "^$dep\$")" == "" ] && [ "$(pkg li | sed -e "s#-[0-9].*\$##g" | grep -E "^$dep\$")" == "" ]; then 
+		pkg download $dep
+	   #fi
+	  done
+	 fi
+       
+  done
+ 
+ install-preload /root/pkg
+ 
+fi
+
+
+
+rm -rf /root/pkg/*
+rm -rf /opt/preload/*
+rm -f /*.gz
+
+if [ "$PUPMODE" == "" ]; then
+
+ echo "" > /etc/resolv.conf
+
+ rm -rf /root/.config/pulse/*
+ rm -rf /root/.cache/*
+ rm -rf /tmp/*
+ rm -rf /var/tmp/*
+
+ [ -e /root/.local/state/bash/history ] && echo "" > /root/.local/state/bash/history
+ [ -e /root/.bash_history ] && echo "" > /root/.bash_history
+
+ [ -e /root/.local/state/bash/history ] && echo "" > /root/.local/state/bash/history
+ [ -e /root/.bash_history ] && echo "" > /root/.bash_history
+ [ -e /root/.history ] && echo "" > /root/.history
+
+fi
+
+
+update-woof-installed
+
+echo "Update builtin complete"

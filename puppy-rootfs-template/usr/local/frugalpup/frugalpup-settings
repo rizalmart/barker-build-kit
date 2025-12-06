@@ -1,0 +1,121 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+error_exit() {
+	if [ "$1" ]; then
+		yad $YAD_STD_OPTS --title "${Tt}" --width=400 --text-align=center \
+			--text "${MuBig}${1}${MuBe}" \
+			--button=${TbOk}!gtk-ok:0
+	fi
+	exit 1
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+[ -f "$CONFIG_FN" ] && . "$CONFIG_FN"
+
+[ "$showSAVE" = "yes" ] && SAVE_VAL='TRUE' || SAVE_VAL='FALSE'
+[ "$showKERNEL" = "yes" ] && KERNEL_VAL='TRUE' || KERNEL_VAL='FALSE'
+[ "$showPFIX" = "yes" ] && PFIX_VAL='TRUE' || PFIX_VAL='FALSE'
+[ "$doAUTO" = "yes" ] && AUTO_VAL='TRUE' || AUTO_VAL='FALSE'
+
+FRUGAL_VAL="$frugalPARMS"
+MIN_VAL="$minPARMS"
+[ "$MIN_VAL" ] || MIN_VAL="$stickPARMS"
+
+DOC_CMD='defaultbrowser https://www.kernel.org/doc/html/v5.19/admin-guide/kernel-parameters.html'
+
+Tt="${TnFrugal}-$(gettext 'settings') ${TnVer}"
+
+Tm0="$(gettext 'Control the display of optional advanced dialogs:')"
+Tm1="$(gettext 'A checked box indicates that the dialog is enabled in')"
+Tm3="$(gettext 'Separate save location')"
+Tm4="$(gettext 'Kernel boot parameters')"
+Tm5="$(gettext 'Pfix boot parameter')"
+Tm6="$(gettext 'A checked box indicates that AUTOSAVE is enabled.')"
+Tm7="$(gettext 'Use AUTOSAVE')"
+Tm8="$(gettext 'Control which kernel boot parameters are used:')"
+Tm9="$(gettext 'Web page, documentation of available Kernel boot parameters')"
+Tm10="$(gettext 'causes the ethernet interface to still be')"
+Tm11="$(printf "$(gettext 'Edit the list of kernel boot parameters to show in %s.')" "${MuPurple}${TnFrugal}${MuEnd}")"
+Tm12="$(printf "$(gettext 'If list is empty, the %s dialog is disabled.')" "${MuPurple}${Tm4}${MuEnd}")"
+Tm13="$(gettext 'Edit the minimalist list of kernel boot parameters,\nthese are always used by %s, %s and %s.')"
+Tm14="$(printf "${Tm13}" "${MuPurple}${TnStick}${MuEnd}" "${MuPurple}${TnF2}${MuEnd}" "${MuPurple}${TnDisk}${MuEnd}")"
+
+VALS="$(yad $YAD_STD_OPTS --title "${Tt}" --form --width=500 \
+	--text="${MuBig}${Tm0}${MuBe}
+
+${Tm1} ${MuPurple}${Tm2}${MuEnd}." \
+	--field="${Tm3}:CHK" $SAVE_VAL \
+	--field="${Tm4}:CHK" $KERNEL_VAL \
+	--field="${Tm5}:CHK" $PFIX_VAL \
+	--field=":LBL" "" \
+	--field="${Tm6}:LBL" "" \
+	--field="${Tm7}:CHK" $AUTO_VAL \
+	--field=":LBL" "" \
+	--field="${MuBig}${Tm8}${MuBe}:LBL" "" \
+	--field="${MuBlue}${Tm9}${MuEnd}:FBTN" "$DOC_CMD" \
+	--field="${MuPurple}net.ifnames=0${MuEnd} ${Tm10} ${MuPurple}eth0${MuEnd}.:LBL" "" \
+	--field="${Tm11}
+${Tm12}:LBL" "" \
+	--field="" "$FRUGAL_VAL" \
+	--field="${Tm14}:LBL" "" \
+	--field="" "$MIN_VAL" \
+	--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+[ $? -eq 0 ] || error_exit
+[ "$VALS" ] || error_exit "$(gettext 'No values specified')"
+
+SAVE_VAL='no'; KERNEL_VAL='no'; PFIX_VAL='no'; AUTO_VAL='no'; FRUGAL_VAL=''; MIN_VAL=''
+[ "${VALS%%|*}" = "TRUE" ] && SAVE_VAL='yes'
+VALS="${VALS#*|}"
+[ "${VALS%%|*}" = "TRUE" ] && KERNEL_VAL='yes'
+VALS="${VALS#*|}"
+[ "${VALS%%|*}" = "TRUE" ] && PFIX_VAL='yes'
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+[ "${VALS%%|*}" = "TRUE" ] && AUTO_VAL='yes'
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+FRUGAL_VAL="${VALS%%|*}"
+VALS="${VALS#*|}"
+VALS="${VALS#*|}"
+MIN_VAL="${VALS%%|*}"
+
+SAVE_DONE=''; KERNEL_DONE=''; PFIX_DONE=''; AUTO_DONE=''; FRUGAL_DONE=''; MIN_DONE=''
+CONFIG_FN_NEW="${CONFIG_FN}.new.txt"
+[ -f "$CONFIG_FN_NEW" ] && rm "$CONFIG_FN_NEW"
+while IFS='' read ONE_LINE; do
+	case $ONE_LINE in
+		showSAVE*) echo "showSAVE='$SAVE_VAL'" >> "$CONFIG_FN_NEW"; SAVE_DONE='yes' ;;
+		showKERNEL*) echo "showKERNEL='$KERNEL_VAL'" >> "$CONFIG_FN_NEW"; KERNEL_DONE='yes' ;;
+		showPFIX*) echo "showPFIX='$PFIX_VAL'" >> "$CONFIG_FN_NEW"; PFIX_DONE='yes' ;;
+		doAUTO*) echo "doAUTO='$AUTO_VAL'" >> "$CONFIG_FN_NEW"; AUTO_DONE='yes' ;;
+		frugalPARMS*) echo "frugalPARMS='$FRUGAL_VAL'" >> "$CONFIG_FN_NEW"; FRUGAL_DONE='yes' ;;
+		minPARMS*) echo "minPARMS='$MIN_VAL'" >> "$CONFIG_FN_NEW"; MIN_DONE='yes' ;;
+		stickPARMS*) echo "minPARMS='$MIN_VAL'" >> "$CONFIG_FN_NEW"; MIN_DONE='yes' ;;
+		*) echo "$ONE_LINE" >> "$CONFIG_FN_NEW" ;;
+	esac
+done < "$CONFIG_FN"
+
+[ "$SAVE_DONE" ] || echo "showSAVE='$SAVE_VAL'" >> "$CONFIG_FN_NEW"
+[ "$KERNEL_DONE" ] || echo "showKERNEL='$KERNEL_VAL'" >> "$CONFIG_FN_NEW"
+[ "$PFIX_DONE" ] || echo "showPFIX='$PFIX_VAL'" >> "$CONFIG_FN_NEW"
+[ "$AUTO_DONE" ] || echo "doAUTO='$AUTO_VAL'" >> "$CONFIG_FN_NEW"
+[ "$FRUGAL_DONE" ] || echo "frugalPARMS='$FRUGAL_VAL'" >> "$CONFIG_FN_NEW"
+[ "$MIN_DONE" ] || echo "minPARMS='$MIN_VAL'" >> "$CONFIG_FN_NEW"
+
+mv -f "$CONFIG_FN_NEW" "$CONFIG_FN"
+
+exit

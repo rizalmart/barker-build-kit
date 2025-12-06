@@ -1,0 +1,219 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+do_exit() {
+	[ "$SRC_MTD" ] && umount "$SRC_MP" 2>/dev/null
+	[ "$DEST_MTD" ] && umount "$DEST_MP" 2>/dev/null
+	[ "$XPID" ] && kill -9 $XPID 2>/dev/null
+	[ "$1" ] && echo "${1}"
+	exit $2
+}
+
+error_exit() {
+	do_exit "$1" 1
+}
+
+normal_exit() {
+	do_exit "$1" 0
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+XPID=''
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext 'File %s not found')" "${MuPurple}${UTILS_DIR}/functions_part${MuEnd}")"
+. "$UTILS_DIR/functions_part"
+
+EFI_TAR=''
+if [ -s "$PUP_GRUB/$EFI_FONT" ]; then
+	EFI_TAR="$PUP_GRUB/$EFI_FONT"
+else
+	[ -s "$EXE_DIR/$EFI_FONT" ] && EFI_TAR="$EXE_DIR/$EFI_FONT"
+fi
+[ "$EFI_TAR" ] || error_exit "$(gettext 'grub2-efi support missing')"
+
+MBR_TAR=''
+if [ -s "$PUP_GRUB/$MBR_FN" ]; then
+	MBR_TAR="$PUP_GRUB/$MBR_FN"
+else
+	[ -s "$EXE_DIR/$MBR_FN" ] && MBR_TAR="$EXE_DIR/$MBR_FN"
+fi
+[ "$MBR_TAR" ] || error_exit "$(gettext 'grub2-mbr support missing')"
+
+SFS_PART=''; SFS_DIR=''; DEST_PART=''; BOOT_TYPE=''; HAVE_OTHER=''; GUI_IS=''
+[ "$CACHE_FN" ] && [ -f "$CACHE_FN" ] && . "$CACHE_FN"
+
+[ "$SFS_PART" ] || error_exit "$(gettext 'No install partition specified')"
+[ "$DEST_PART" ] || error_exit "$(gettext 'No boot partition specified')"
+[ "$(blkid "/dev/$DEST_PART" | grep 'vfat')" ] || error_exit "\"$DEST_PART\" $(gettext 'is not a fat32 partition')"
+
+#cfgDir='/etc/grub.d'
+cfgDir='/var/local/otherinstalls.d'
+[ -L "$cfgDir" ] && cfgDir="$(realpath "$cfgDir")"
+if [ -d "$cfgDir" ]; then
+	GRUB_DIR="$cfgDir"
+else
+	GRUB_DIR=''
+fi
+
+[ "$BOOT_TYPE" ] || BOOT_TYPE='uefi'
+DO_UEFI=''; DO_MBR=''; exParm=''; efiFN='bootx64.efi'
+DO_INSTALL='yes'; CFG_REPLACE='yes'; baseBT="$BOOT_TYPE"
+case "$BOOT_TYPE" in
+	uefi) DO_UEFI='yes' ;;
+	uefi32) DO_UEFI='yes'; baseBT='uefi'; exParm='64.efi'; efiFN='bootia32.efi' ;;
+	uefi64) DO_UEFI='yes'; baseBT='uefi'; exParm='32.efi' ;;
+	mbr) DO_MBR='yes' ;;
+	both) DO_UEFI='yes'; DO_MBR='yes' ;;
+	replace) DO_INSTALL='' ;;
+	append) DO_INSTALL=''; CFG_REPLACE='' ;;
+esac
+
+gtkdialog-splash -bg yellow -close box -text "$(gettext 'Copying boot files to') $DEST_PART" &
+XPID=$!
+
+ensure_mounted "$SFS_PART"
+SRC_MP="$ensure_mounted_MP"
+SRC_MTD="$ensure_mounted_DID"
+[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SFS_PART\""
+SRC_DIR="${SRC_MP}${SFS_DIR}"
+
+ensure_mounted "$DEST_PART"
+DEST_MP="$ensure_mounted_MP"
+DEST_MTD="$ensure_mounted_DID"
+[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$DEST_PART\""
+
+if [ "$DO_INSTALL" ]; then
+	if [ "$DO_UEFI" ]; then
+	#	echo "efi"
+		tar -xf "$EFI_TAR" --overwrite -C "$DEST_MP" >/dev/null
+		if [ $? -ne 0 ]; then
+			error_exit "$(gettext 'Failed to write Grub2 efi files to') \"$DEST_PART\""
+		fi
+		BIN_TAR="${EFI_TAR%/*}/$EFI_BIN"
+		BIN_DEST="$DEST_MP/EFI/boot"
+		haveMGR=''
+		REMOV="$(lsblk -nr -o HOTPLUG /dev/$DEST_PART)"
+		if [ "$REMOV" = "0" ]; then
+			type efibootmgr > /dev/null 2>&1
+			[ $? -eq 0 ] && haveMGR='yes'
+			if [ "$haveMGR" ] || [ "HAVE_OTHER" ] || [ -e "$DEST_MP/EFI/Puppy" ]; then
+				BIN_DEST="$DEST_MP/EFI/Puppy"
+			fi
+		fi
+		[ -d "$BIN_DEST" ] && rm -rf "$BIN_DEST"
+		mkdir -p "$BIN_DEST"
+		if [ "$exParm" ]; then
+			tar -xf "$BIN_TAR" --overwrite --exclude="*${exParm}" -C "$BIN_DEST" >/dev/null
+		else
+			tar -xf "$BIN_TAR" --overwrite -C "$BIN_DEST" >/dev/null
+		fi
+		if [ $? -ne 0 ]; then
+			error_exit "$(gettext 'Failed to write Grub2 efi files to') \"$DEST_PART\""
+		fi
+		type signBinary >/dev/null 2>&1
+		if [ $? -eq 0 ]; then
+			for  oneGrub in grubia32.efi grubx64.efi; do
+				[ -e "$BIN_DEST/$oneGrub" ] && signBinary "$BIN_DEST/$oneGrub" >/dev/null 2>&1
+				[ -e "${BIN_DEST}/${oneGrub}.unsigned" ] && rm "${BIN_DEST}/${oneGrub}.unsigned"
+			done
+			type getMOKdir >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				mokDIR="$(getMOKdir 2>/dev/null)"
+				[ "$mokDIR" ] && [ -e "$mokDIR/local.cer" ] && cp -af "$mokDIR/local.cer" "$DEST_MP/puppyMOK.cer"
+			fi
+		fi
+		if [ "$haveMGR" ]; then
+			# split into device and partition number
+			get_device "$DEST_PART"
+			[ "$get_device_RET" ] || error_exit "$(gettext 'Could not get device for') ${MuPurple}${DEST_PART}${MuEnd}"
+			EFI_DEVICE="$get_device_RET"
+			EFI_PARTITION="${DEST_PART#${EFI_DEVICE}}"
+			EFI_PARTITION="${EFI_PARTITION#p}"
+			# delete any previous boot
+			pupNum="$(efibootmgr | grep 'Puppy Linux' | cut -b5-8)"
+			[ "$pupNum" ] && efibootmgr -q -b $pupNum -B
+			# register new boot
+			efibootmgr -q -c -d /dev/$EFI_DEVICE -p $EFI_PARTITION -l "\\EFI\\Puppy\\$efiFN" -L "Puppy Linux - Grub2"
+		fi
+	fi
+
+	if [ "$DO_MBR" ]; then
+	#	echo "mbr"
+		tar -xf "$MBR_TAR" --overwrite -C "$DEST_MP" >/dev/null
+		[ $? -eq 0 ] || error_exit "$(gettext 'Failed to write Grub2 mbr files to') \"$DEST_PART\""
+		get_device "$DEST_PART"
+		"$EXE_DIR/bootlace.com" --boot-prevmbr-last --time-out=0 /dev/$get_device_RET > /dev/null
+		[ $? -eq 0 ] || error_exit "$(gettext 'Failed to write grub4dos mbr to') \"$get_device_RET\""
+	fi
+elif [ "$CFG_REPLACE" ]; then # replacing only grub.cfg
+	haveMBR=''; haveUEFI=''; baseBT='both'
+	if [ -e "$DEST_MP/boot/grub/i386-pc/core.img" ]; then
+		haveMBR='yes'
+		DO_MBR='yes'
+		baseBT='mbr'
+	fi
+	if [ -e "$DEST_MP/EFI/Puppy/bootx64.efi" ]; then
+		haveUEFI='yes'
+	elif [ -e "$DEST_MP/EFI/Puppy/bootia32.efi" ]; then
+		haveUEFI='yes'
+	elif [ -e "$DEST_MP/EFI/boot/bootx64.efi" ]; then
+		haveUEFI='yes'
+	elif [ -e "$DEST_MP/EFI/boot/bootia32.efi" ]; then
+		haveUEFI='yes'
+	fi
+	if [ "$haveUEFI" ]; then
+		DO_UEFI='yes'
+		if [ "$haveMBR" ]; then
+			baseBT='both'
+		else
+			baseBT='uefi'
+		fi
+	fi
+fi
+
+[ "$CFG_REPLACE" ] && cat "$EXE_DIR/cfg-top-${baseBT}.txt" > "$DEST_MP/grub.cfg"
+
+ERR_MSG="$("$EXE_DIR/frugalpup-bootentry" "$SRC_DIR" fs "$DEST_MP")"
+[ $? -eq 0 ] || error_exit "$ERR_MSG"
+
+if [ "$CFG_REPLACE" ]; then
+	if [ "$GUI_IS" = 'Boot' ]; then
+		if [ "$GRUB_DIR" ]; then
+			GRUB_LIST="$(find "$GRUB_DIR" -mindepth 1 -maxdepth 1 -type f | sort)"
+			for ONE_FN in $GRUB_LIST; do
+				cat "$ONE_FN" >> "$DEST_MP/grub.cfg"
+				#handle possible missing \n at EOF
+				LAST_CHAR="$(tail -c 1 "$ONE_FN")"
+				case $LAST_CHAR in
+					'}') echo "" >> "$DEST_MP/grub.cfg" ;;
+					' ') echo "" >> "$DEST_MP/grub.cfg" ;;
+				esac
+			done
+		fi
+	fi
+	[ "$DO_UEFI" ] && cat "$EXE_DIR/cfg-bios.txt" >> "$DEST_MP/grub.cfg"
+	cat "$EXE_DIR/cfg-bot.txt" >> "$DEST_MP/grub.cfg"
+fi
+
+sync
+if [ "$SFS_PART" = "$DEST_PART" ]; then
+	DEST_MTD="$SRC_MTD"
+else
+	[ "$SRC_MTD" ] && umount "$SRC_MP"
+	sync
+fi
+if [ "$DEST_MTD" ]; then
+	sleep 1
+	umount "$DEST_MP"
+	[ $? -eq 0 ] || { sleep 1; umount "$DEST_MP"; }
+fi
+
+normal_exit

@@ -1,0 +1,63 @@
+#!/bin/bash
+#Run display server
+#written by mistfire
+
+if [ "$WAYLAND_DISPLAY" == "" ] && [ "$DISPLAY" == "" ]; then
+
+    DM_LIST="$(cat /etc/display-managers.list 2>/dev/null | tr '\n' ' ')"
+
+    if [ "$DM_LIST" != "" ] && [ "$(busybox pidof $DM_LIST)" != "" ]; then
+      exit
+	fi
+	
+	. /etc/desktop-session
+	
+	if [ "$DESKTOP_SESSION" == "x11" -o "$DESKTOP_SESSION" == "xorg" -o "$DESKTOP_SESSION" == "x" ]; then
+	
+		if which Xorg >/dev/null 2>&1 ; then
+			#want to go straight into X on bootup only...
+			if [ ! -f /tmp/bootcnt.txt ] ; then
+			   
+			   if [ "$(pidof Xorg)" == "" ]; then
+				touch /tmp/bootcnt.txt
+				dmesg > /tmp/bootkernel.log &
+				exec startx
+			   fi
+			   
+			else
+				[ -e /usr/lib/puppy/sbin/pm13 ] && exec /usr/lib/puppy/sbin/pm13 cli &
+			fi
+			
+		else
+		  exec wayland-init
+		fi
+	
+	elif [ "$DESKTOP_SESSION" == "wayland" ];then
+	
+	  	if [ ! -f /tmp/bootcnt.txt ] ; then
+			
+			WC_PATH=/etc/wayland-compositor
+			
+			[ -e "$XDG_CONFIG_HOME/wayland-compositor" ] && WC_PATH="$XDG_CONFIG_HOME/wayland-compositor"
+			
+			wCOMPOSITOR="$(cat $WC_PATH 2>/dev/null)"
+			
+			if [ "$wCOMPOSITOR" != "" ]; then
+			  
+			  if [ "$(pidof $wCOMPOSITOR)" == "" ]; then 
+			    touch /tmp/bootcnt.txt
+			    dmesg > /tmp/bootkernel.log &
+			    exec wayland-init
+			  fi
+			
+			fi
+			
+		else
+			exec /usr/lib/puppy/sbin/pm13 cli &
+		fi
+		
+	else
+	   [ -e /usr/lib/puppy/sbin/pm13 ] && exec /usr/lib/puppy/sbin/pm13 cli &
+	fi
+
+fi

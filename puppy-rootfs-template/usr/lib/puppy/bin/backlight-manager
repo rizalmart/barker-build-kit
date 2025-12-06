@@ -1,0 +1,63 @@
+#!/bin/sh
+#store and load backlight settings for non-systemd init system
+#written by mistfire
+
+if [ ! -e /sys/class/backlight ] || [ "$(ls /sys/class/backlight 2>/dev/null)" == "" ]; then
+ exit
+fi
+
+load_brightness(){
+
+for bfld in $(ls /sys/class/backlight 2>/dev/null)
+do
+
+  MAX_BRIGHT=$(cat /sys/class/backlight/$bfld/max_brightness 2>/dev/null)
+
+  if [ -f /var/lib/backlight-manager/$bfld ]; then
+	LAST_BRIGHT=$(cat /var/lib/backlight-manager/$bfld 2>/dev/null)
+  else
+    LAST_BRIGHT=$(cat /sys/class/backlight/$bfld/brightness 2>/dev/null)
+  fi
+
+  [ "$MAX_BRIGHT" == "" ] && MAX_BRIGHT=0
+  [ "$LAST_BRIGHT" == "" ] && LAST_BRIGHT=0
+
+  if [ $MAX_BRIGHT -ge 0 ]; then
+   
+     if [ $LAST_BRIGHT -gt $MAX_BRIGHT ]; then
+	   CURR_BRIGHT=$(expr $MAX_BRIGHT / 2)
+     else
+	   CURR_BRIGHT=$LAST_BRIGHT
+     fi
+   
+     echo $CURR_BRIGHT > /sys/class/backlight/$bfld/brightness
+
+  fi
+
+done
+
+}
+
+save_brightness(){
+	
+[ ! -d /var/lib/backlight-manager ] && mkdir -p /var/lib/backlight-manager
+
+for bfld in $(ls /sys/class/backlight 2>/dev/null)
+do
+  if [ -e /sys/class/backlight/$bfld/brightness ]; then
+	cat /sys/class/backlight/$bfld/brightness > /var/lib/backlight-manager/$bfld	
+  fi
+done	
+		
+}
+
+ARGS="$1"
+
+case $ARGS in
+start|reload)
+ load_brightness
+;;
+stop)
+ save_brightness
+;;
+esac

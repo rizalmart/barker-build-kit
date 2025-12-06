@@ -1,0 +1,27 @@
+#!/bin/ash
+
+#the full ps has different output to busybox ps if no params, for compatibility
+#with our scripts, if no commandline params, run busybox ps...
+[ ! $1 ] && exec busybox ps
+
+PS_BIN=/bin/ps
+
+[ -L $PS_BIN ] && PS_BIN=$(readlink $PS_BIN)
+
+if [ "$(file $PS_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $PS_BIN)" != "busybox" ]; then
+ exec $PS_BIN $@
+else
+	
+	PS_BIN=/bin/ps-FULL
+	
+	[ -L $PS_BIN ] && PS_BIN=$(readlink $PS_BIN)
+
+	if [ "$(file $PS_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $PS_BIN)" != "busybox" ]; then
+	 exec $PS_BIN $@
+	else
+	 exec busybox ps
+	fi
+	
+fi
+
+

@@ -1,0 +1,11 @@
+#!/bin/bash
+#save2flash cron helper script
+#written by mistfire
+
+. /etc/eventmanager
+
+[ "$RAMSAVEINTERVAL" == "" ] && exit
+[ "$RAMSAVEINTERVAL" == "0" ] && exit
+[ "$RAMSAVEINTERVAL" == "+0" ] && exit
+
+exec /usr/lib/puppy/sbin/save2flash-cron pup_event

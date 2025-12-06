@@ -1,0 +1,12 @@
+
+[Desktop Entry]
+Encoding=UTF-8
+Name=PET Package Manager
+Comment=Manage user installed pet packages
+Icon=application-pet
+Exec=petget-lite-manager
+Terminal=false
+StartupNotify=false
+Type=Application
+Categories=X-Setup;
+GenericName=PET Package Manager

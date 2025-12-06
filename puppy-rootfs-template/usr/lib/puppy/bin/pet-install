@@ -1,0 +1,384 @@
+#!/bin/bash
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <package.pet>"
+    exit 1
+fi
+
+[ "$(whoami)" != "root" ] && exec sudo -A $0 $@
+
+PETFILE="$1"
+PKGNAME="$(basename "$PETFILE" .pet)"
+WORKDIR="$(mktemp -d)"
+DB_DIR="/var/lib/petget"
+FILES_DIR="$DB_DIR/package-files"
+SPECS_DIR="$DB_DIR/package-specs"
+SCRIPT_DIR="$DB_DIR/package-scripts"
+USER_DB="$DB_DIR/user-installed-packages"
+
+[ -f /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+[ "$PUPMODE" == "" ] && PUPMODE=2
+
+PUPREM=$(expr $PUPMODE % 2)
+
+[ "$PUPREM" == "" ] && PUPREM=0
+[ $PUPREM -ne 0 ] && ODD_PUPMODE="y"
+
+
+[ ! -d "$DB_DIR" ] && mkdir -p "$DB_DIR"
+
+[ ! -f "$USER_DB" ] && touch "$USER_DB"
+
+[ ! -d "$FILES_DIR" ] && mkdir -p "$FILES_DIR"
+[ ! -d "$SPECS_DIR" ] && mkdir -p "$SPECS_DIR"
+[ ! -d "$SCRIPT_DIR" ] && mkdir -p "$SCRIPT_DIR"
+
+clean_workspace(){
+   rm -rf "$WORKDIR"
+}
+
+pet_update_system_cache(){
+
+	PKGFILES=${1}
+
+	GTKVERLIST="2.0 3.0 4.0 5.0 6.0"
+
+
+	if [ "$XDG_DATA_DIRS" != "" ]; then
+	 SHAREPATH=`echo $XDG_DATA_DIRS | tr ':' ' '`
+	else
+	 SHAREPATH="/usr/share /usr/local/share"
+	fi
+
+	if [ "$LD_LIBRARY_PATH" != "" ]; then
+	 LIBDIRS=`echo $LD_LIBRARY_PATH | tr ':' ' '`
+	else
+	 LIBDIRS="/lib /usr/lib /usr/local/lib"
+	fi
+
+	FONT_FOUND=""
+	PANGO_FOUND=""
+	GDK_FOUND=""
+	GTKIM_FOUND=""
+
+	for usrfld in $SHAREPATH
+	do
+
+	  if grep -q -m 1 "$usrfld/glib-2.0/schemas" $PKGFILES ; then
+		  [ "$(which glib-compile-schemas)" != "" ] && glib-compile-schemas $usrfld/glib-2.0/schemas 2>/dev/null
+	  fi
+
+	  if grep -q -m 1 "$usrfld/applications/" $PKGFILES ; then
+		if [ "$(which update-desktop-database)" != "" ] ; then
+		 rm -f $usrfld/applications/mimeinfo.cache 2>/dev/null
+		 update-desktop-database $usrfld/applications 2>/dev/null
+		fi
+	  fi
+
+	  if grep -q -m 1 "$usrfld/mime/" $PKGFILES ; then
+	  
+		[ "$(which update-mime-database)" != "" ] && update-mime-database $usrfld/mime 2>/dev/null
+		
+		if [ -e "$usrfld/mime/packages" ] && [ "$(ls -1 "$usrfld/mime/packages")" == "" ]; then
+		 rm -rf $usrfld/mime/*
+		fi
+		
+	  fi
+
+	  if grep -q -m 1 "$usrfld/icons/" $PKGFILES ; then
+		
+		for gtkcmd in gtk gtk4
+		do
+		 if [ "$(which ${gtkcmd}-update-icon-cache)" != "" ] ; then  
+		  find "$usrfld/icons/" -name "icon-theme.cache" -type f | xargs -i rm -f '{}'
+		  find "$usrfld/icons/" -maxdepth 1 -mindepth 1 -type d | xargs -i ${gtkcmd}-update-icon-cache -f -i '{}' 2>/dev/null
+		  break
+		 fi
+		done
+		
+	  fi
+	  
+	  if [ "$(grep -m 1 '$usrfld/fonts/' $PKGFILES)" != "" ]; then
+	   [ "$FONT_FOUND" == "" ] && FONT_FOUND="y"
+	  fi
+
+	done
+
+
+	for libfld in $LIBDIRS
+	do
+		
+		if grep -q -m 1 "$libfld/gio/modules" $PKGFILES ; then
+		 [ "$(which gio-querymodules)" != "" ] && gio-querymodules $libfld/gio/modules 2>/dev/null
+		fi
+			
+		if [ "$(grep -m 1 '$libfld/gdk-pixbuf' $PKGFILES)" != "" ]; then
+		  [ "$GDK_FOUND" == "" ] && GDK_FOUND="y"
+		fi
+
+		if [ "$(grep -m 1 '$libfld/pango/' $PKGFILES)" != "" ]; then
+		  [ "$PANGO_FOUND" == "" ] && PANGO_FOUND="y"
+		fi
+
+		if [ "$(grep -m 1 "$libfld/gtk-$GTKVER" $PKGFILES | grep -m 1 "/immodules")" != "" ]; then
+		  [ "$GTKIM_FOUND" == "" ] && GTKIM_FOUND="y"
+		fi
+
+	done
+
+	[ "$FONT_FOUND" != "" ] && fc-cache -f
+
+	if [ "$GDK_FOUND" != "" ]; then
+		if [ "$(which update-gdk-pixbuf-loaders)" != "" ] ; then
+		 update-gdk-pixbuf-loaders
+		else
+		 gdk-pixbuf-query-loaders --update-cache 2>/dev/null
+		fi
+	fi
+
+	if [ "$PANGO_FOUND" != "" ]; then
+		if [ "$(which update-pango-querymodules)" != "" ] ; then
+			update-pango-querymodules
+		else
+			pango-querymodules --update-cache 2>/dev/null
+		fi
+	fi
+
+	if [ "$GTKIM_FOUND" != "" ]; then
+		for GTKVER in $GTKVERLIST
+		do
+			if [ "$(which update-gtk-immodules-$GTKVER)" != "" ] ; then
+			  update-gtk-immodules-$GTKVER
+			else
+			  gtk-query-immodules-$GTKVER --update-cache 2>/dev/null
+			fi
+		done
+	fi
+		
+
+
+	if grep -q -m 1 "/etc/ld.so.conf.d/" $PKGFILES ; then
+	  ldconfig
+	fi
+
+	if grep -q -m 1 "/lib/modules/$(uname -r)/" $PKGFILES ; then
+	  depmod -a
+	fi
+
+	if grep -q -m 1 "/gconv/" $PKGFILES ; then
+	  iconvconfig 2>/dev/null
+	fi
+
+	if [ "$(grep -m 1 '/udev/hwdb.d/' $PKGFILES)" != "" ]; then
+	  [ "$(udevadm --help 2>&1 | grep hwdb)" != "" ] && udevadm hwdb --update
+	fi
+
+	if [ "$(grep -m 1 '/udev/rules.d/' $PKGFILES)" != "" ]; then
+	 if [ "$(busybox pidof udevd systemd-udevd)" != "" ]; then
+		udevadm control --reload-rules
+		udevadm trigger
+	 fi
+	fi
+
+	if grep -q -m 1 "/etc/dconf/db/" $PKGFILES ; then
+	  dconf update
+	fi
+
+}
+
+
+# -----------------------------------------
+# Disk Space Check
+# -----------------------------------------
+
+PETSIZE=$(stat -c%s "$PETFILE")
+REQUIRED=$(expr $PETSIZE \* 5)   # assume 5× expansion
+
+TARGET_INSTALL_DIR=""
+PREFIX_DIR=""
+
+ROOTFS="$(mount | grep " on / " | awk '{ print $5 }')"
+
+[ "$(echo $ROOTFS | grep -E 'aufs|overlay')" != "" ] && PREFIX_DIR="/run/initramfs"
+
+if [ "$ODD_PUPMODE" != "" ] && [ "$ROOTFS" == "overlay" ]; then
+  TARGET_INSTALL_DIR="${PREFIX_DIR}/pup_rw"  
+elif [ "$ODD_PUPMODE" != "" ] && [ "$ROOTFS" == "aufs" ]; then
+  TARGET_INSTALL_DIR="${PREFIX_DIR}${SAVE_LAYER}"
+elif [ "$PREFIX_DIR" != "" ] && [ "$ROOTFS" == "aufs" ]; then
+  TARGET_INSTALL_DIR="${PREFIX_DIR}${SAVE_LAYER}"
+else
+  TARGET_INSTALL_DIR="/"
+fi
+
+FREE_WORKDIR=$(df -P "$WORKDIR" | awk 'NR==2 {print $4 * 1024}')
+
+FREE_ROOT=$(df -P "$TARGET_INSTALL_DIR" | awk 'NR==2 {print $4 * 1024}')
+
+if [ "$FREE_WORKDIR" -lt "$REQUIRED" ]; then
+    echo "ERROR: Not enough space in $WORKDIR"
+    echo "Required: $REQUIRED bytes, Available: $FREE_WORKDIR bytes"
+    exit 1
+elif [ "$FREE_ROOT" -lt "$REQUIRED" ]; then
+    echo "ERROR: Not enough space on /"
+    echo "Required: $REQUIRED bytes, Available: $FREE_ROOT bytes"
+    exit 1
+fi
+
+echo "[*] Disk space OK."
+
+echo "[*] Stripping PET checksum footer..."
+
+cp "$PETFILE" "$WORKDIR/$PKGNAME.pet"
+
+finfo=$(file -b "$WORKDIR/$PKGNAME.pet")
+
+case $finfo in
+  gz*|GZ*)
+	EXT=gz
+	zFLAG="z"
+  ;;
+  xz*|XZ*)
+	EXT=xz
+	zFLAG="J"
+  ;;
+  *)
+   echo "Invalid tarball"
+   clean_workspace
+   exit 1
+  ;;
+esac
+
+TARBALL_FILE="$WORKDIR/$PKGNAME.tar.$EXT"
+
+head -c -32 "$WORKDIR/$PKGNAME.pet" > $TARBALL_FILE
+
+rm -f $WORKDIR/$PKGNAME.pet
+
+echo "[*] Extracting PET..."
+
+cd "$WORKDIR"
+
+[ !  -d ${WORKDIR}/extracted ] && mkdir -p ${WORKDIR}/extracted
+
+tar -x --force-local --strip=1 -f "$TARBALL_FILE" --directory=${WORKDIR}/extracted
+
+if [ $? -ne 0 ]; then
+    echo "Error: tar archive appears corrupted. Aborting."
+    clean_workspace
+    exit 1
+fi
+
+TOPDIR="extracted"
+PKGSUBDIR=""
+
+if [ -z "$TOPDIR" ]; then
+    echo "ERROR: No folder structure found in PET!"
+    clean_workspace
+    exit 1
+fi
+
+if [ ! -f $WORKDIR/$TOPDIR/pet.specs ]; then
+	
+    PKGSUBDIR=$(find "$WORKDIR/$TOPDIR" -type d -maxdepth 1 -mindepth 1 | head -n 1 | xargs -i basename {})
+    
+    if [ "$PKGSUBDIR" != "" ]; then
+      
+      if [ ! -f "$WORKDIR/$TOPDIR/$PKGSUBDIR/pet.specs" ]; then
+             echo "ERROR: pet.specs missing in package."
+			 clean_workspace
+			 exit 1
+      fi
+    
+    else
+     echo "ERROR: pet.specs missing in package."
+     clean_workspace
+     exit 1
+    fi
+    
+fi
+
+# Determine real package name
+REALNAME="$(cut -d '|' -f 2 ./$TOPDIR/$PKGSUBDIR/pet.specs)"
+REALVER="$(cut -d '|' -f 3 ./$TOPDIR/$PKGSUBDIR/pet.specs)"
+
+[ "$REALNAME" == "" ] && REALNAME="$PKGNAME"
+[ "$REALVER" == "" ] && REALVER="0.0.0"
+
+OLD_FILELIST="$FILES_DIR/$REALNAME.files"
+
+echo "[*] Building new file list..."
+
+tar --force-local --list -f "$TARBALL_FILE" | sed -e 's|^\(\./\)\?[^/]*/|/|' -e 's#^\.\/#\/#g' -e '/^\/$/d' -e "s#^#\/#g" -e "s#^\/\/#\/#g" | sort > "$WORKDIR/new.files"
+
+# -----------------------------------------
+# Install Files
+# -----------------------------------------
+echo "[*] Installing package files ..."
+
+cp -arf $WORKDIR/$TOPDIR/$PKGSUBDIR/* $TARGET_INSTALL_DIR/
+
+[ "$ROOTFS" == "aufs" ] && busybox mount -t aufs -o remount,udba=reval unionfs / #remount with faster evaluation mode.
+[ "$ROOTFS" == "overlay" ] && busybox mount -t overlay -o remount /
+
+[ -f /pet.specs ] && rm -f /pet.specs
+
+if [ -f /pinstall.sh ]; then
+  LASTPWD=$(pwd)
+  echo "[*] Running post install script ..."
+  chmod +x /pinstall.sh
+  cd /
+  /pinstall.sh
+  rm -f /pinstall.sh
+  cd $LASTPWD
+fi
+
+# -----------------------------------------
+# Upgrade Handling
+# -----------------------------------------
+if [ -f "$OLD_FILELIST" ]; then
+    
+    echo "[*] Upgrade detected. Removing obsolete files..."
+    
+    while read -r OLDF
+    do
+       if [ -f "$OLDF" ]; then
+         if [ "$(grep -m 1 "$OLDF" "$WORKDIR/new.files")" == "" ]; then
+			rm -f "$OLDF"
+			echo " - removed: $OLDF"
+         fi
+       fi
+    done < "$OLD_FILELIST"
+    
+    cp -f "$WORKDIR/new.files" "$OLD_FILELIST"
+
+else
+    cp -f "$WORKDIR/new.files" "$FILES_DIR/$REALNAME.files"
+fi
+
+# -----------------------------------------
+# Update metadata
+# -----------------------------------------
+echo "[*] Updating metadata..."
+cp -f "$WORKDIR/$TOPDIR/$PKGSUBDIR/pet.specs" "$SPECS_DIR/$REALNAME.specs"
+[ -f "$WORKDIR/$TOPDIR/$PKGSUBDIR/pinstall.sh" ] && cp -f "$WORKDIR/$TOPDIR/$PKGSUBDIR/pinstall.sh" "$SCRIPT_DIR/$REALNAME.install"
+[ -f "$WORKDIR/$TOPDIR/$PKGSUBDIR/puninstall.sh" ] && cp -f "$WORKDIR/$TOPDIR/$PKGSUBDIR/puninstall.sh" "$SCRIPT_DIR/$REALNAME.remove"
+
+if [ "$(grep -m 1 "|$REALNAME|" "$USER_DB")" != "" ]; then
+  grep -v "|$REALNAME|" "$USER_DB" 2>/dev/null > "$WORKDIR/tempdb"
+else
+  cp -f "$USER_DB" "$WORKDIR/tempdb"
+fi
+
+cat $WORKDIR/$TOPDIR/$PKGSUBDIR/pet.specs >> "$WORKDIR/tempdb"
+
+cat "$WORKDIR/tempdb" | sort > "$USER_DB"
+
+echo "[*] Updating system cache..."
+pet_update_system_cache "$FILES_DIR/$REALNAME.files"
+
+clean_workspace
+
+echo "[+] Installation complete."
+echo "    Package: $REALNAME  Version: $REALVER"

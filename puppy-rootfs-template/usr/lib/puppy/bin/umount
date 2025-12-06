@@ -1,0 +1,40 @@
+#!/bin/bash
+
+#set -x ; exec &> /tmp/umount.log
+
+UMOUNT_BIN=/bin/umount
+
+[ -L $UMOUNT_BIN ] && UMOUNT_BIN=$(readlink $UMOUNT_BIN)
+
+if [ "$(file $UMOUNT_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $UMOUNT_BIN)" != "busybox" ]; then
+ UMOUNT_EXEC=$UMOUNT_BIN
+else
+	
+	UMOUNT_BIN=/bin/umount-FULL
+	
+	[ -L $UMOUNT_BIN ] && MOUNT_BIN=$(readlink $UMOUNT_BIN)
+
+	if [ "$(file $UMOUNT_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $UMOUNT_BIN)" != "busybox" ]; then
+	 UMOUNT_EXEC=$UMOUNT_BIN 
+	else
+	 UMOUNT_EXEC="busybox umount"
+	fi
+	
+fi
+
+
+if [ ! $1 ]; then
+ sync
+ exec ${UMOUNT_EXEC}
+fi
+
+if [ -f /usr/local/pup_event/frontend_rox_funcs ] ; then
+	. /usr/local/pup_event/frontend_rox_funcs 2>/dev/null
+	sync
+	rox_umount "$@"
+else
+    sync
+	${UMOUNT_EXEC} -d "$@"
+fi
+
+exit $?

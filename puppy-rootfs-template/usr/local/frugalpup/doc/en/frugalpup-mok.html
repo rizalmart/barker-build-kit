@@ -1,0 +1,66 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+<meta charset="UTF-8">
+<title>FrugalPup - MOK Manager</title>
+<link rel="SHORTCUT ICON" href="gnibbles.ico" />
+<link rel="stylesheet" type="text/css" href="frugalpup.css">
+</head>
+
+<body>
+
+<h1>FrugalPup - MOK (Machine Owner Key) Manager</h1>
+
+<p>Most of the MOK Manager screens are simple menus, with each line in the box representing an option.<br />
+Use the arrow keys to highlight the required option, and then press the <b>Enter</b> key to select it.<br /></p>
+
+<p>On the first boot with <span class="lit">Secure Boot</span> enabled, you should see a screen like this.</p>
+
+<img class="center" src="mok1.png" alt="MOK Manager screen 1">
+<p>To continue, press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok2.png" alt="MOK Manager screen 2">
+<p>To begin the process of enrolling the Puppy Linux MOK, press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok3.png" alt="MOK Manager screen 3">
+<p>Highlight <span class="sel">Enroll key from disk</span>, and press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok4.png" alt="MOK Manager screen 4">
+<p>This starts the process of selecting the file on disk that contains the MOK.<br />
+For Puppies installed with FrugalPup (or any of it's companion utilities), the MOK is in a file called <span class="lit">puppy.cer</span>.<br /><br />
+The image is indicative only, the contents of the box will contain different data.<br /><br />
+Each item in this menu identifies a partition that might contain the key file.<br />
+The items in the menu will most likely not be very meaningful, so, if in doubt, just select the first one.<br /><br />
+Highlight a partition line, and press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok5.png" alt="MOK Manager screen 5">
+<p>This menu lists the directories and files in the root of the selected partition.<br /><br />
+Again, the image is indicative only, and the contents in the box will contain different data.<br /><br />
+If the correct partition was selected in the previous screen, the file <span class="lit">puppy.cer</span> will be in the menu.<br />
+If it is not, then this is probably the wrong partition. Press <b>Esc</b>, to return to the previous menu, and choose a different partition.<br /><br /> 
+Highlight the Puppy key file <span class="sel">puppy.cer</span>, and press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok7.png" alt="MOK Manager screen 7">
+<p>Highlight <span class="sel">Continue</span>, and press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok8.png" alt="MOK Manager screen 8">
+<p>Highlight <span class="sel">Yes</span>, and press <b>Enter</b>.</p>
+<hr width="100%" />
+
+<img class="center" src="mok9.png" alt="MOK Manager screen 9">
+<p>Highlight <span class="sel">Reboot</span>, and press <b>Enter</b>.</p>
+
+<hr width="100%" />
+
+<p>This page has "borrowed" from <a href="https://distro.ibiblio.org/fatdog/web/faqs/secure-boot.html">https://distro.ibiblio.org/fatdog/web/faqs/secure-boot.html</a>.</p>
+
+</body>
+</html>

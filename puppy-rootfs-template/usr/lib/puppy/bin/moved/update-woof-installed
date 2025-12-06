@@ -1,0 +1,5 @@
+#!/bin/sh
+
+if [ -d /var/packages/package-specs ]; then
+ cat /var/packages/package-specs/*.specs > /var/packages/woof-installed-packages
+fi

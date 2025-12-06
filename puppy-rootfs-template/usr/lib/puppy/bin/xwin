@@ -1,0 +1,180 @@
+#!/bin/sh
+#(c) Copyright Barry Kauler 2003,2004,2005,2006,2007 www.puppylinux.com
+#2007 Lesser GPL licence v2 (http://www.fsf.org/licensing/licenses/lgpl.html)
+# called by $HOME/.profile
+# moved sync code for console/xorg kbd layout from xwin to /usr/sbin/input-wizard.
+#
+# $DISTRO_XORG_AUTO         : see /etc/DISTRO_SPECS.
+# /var/local/xwin_no_xorg_auto_flag:
+#   the presence of this file triggers xorg wizard (cli)
+#   if /etc/X11/xorg.conf does not exist
+#
+# /var/local/xwin_disable_xerrs_log_flag
+#   create this file to silence xerrs.log
+#   some buggy / incompatible apps flood xerrs.log mercilessly
+
+
+[ -z $DISPLAY ] || exit
+
+export TEXTDOMAIN=xwin
+export OUTPUT_CHARSET=UTF-8
+
+# Ensure current directory is root, in case changed at command prompt,
+# so rox icon and menu item open only at home directory. rerwin
+cd ~/
+
+. /etc/rc.d/PUPSTATE # variables created at bootup by init script in initrd...
+. /etc/DISTRO_SPECS # PUPMODE=current operating configuration,
+. /etc/rc.d/BOOTCONSTRAINED
+
+if [ -f /var/local/xwin_disable_xerrs_log_flag ] ; then
+	LOGFILE_X='/dev/null'
+else
+	LOGFILE_X='/var/log/xerrs.log'
+fi
+
+# enables to start a specific w.m. from commandline...
+# this can also be an app that stars a desktop environment..
+if [ "$1" ] ; then
+
+ DEXEC="$1"
+
+ case $DEXEC in
+ lxde)
+  if [ "$(which startlxde)" != "" ]; then
+   DEXEC="startlxde"
+  else
+   DEXEC="lxde-session"
+  fi
+ ;;
+ gnome|lxqt|razor|mate|cinnamon)
+  DEXEC="$DEXEC-session"
+ ;;
+ xfce|xfce4)
+  DEXEC="startxfce4"
+ ;;
+ kde|tde|fluxbox) 
+  DEXEC="start$DEXEC"
+ ;;
+ enlightenment) 
+  DEXEC="enlightenment_start"
+ ;;
+ windowmaker) 
+  DEXEC="wmaker"
+ ;;
+esac
+
+	if [ ! "`which $DEXEC 2>/dev/null`" ] && [ ! -x $DEXEC ] ; then
+		echo "* $DEXEC does not exist or is not a valid executable.."
+		exit 1
+	fi
+
+    echo -n "$DEXEC" > $HOME/.config/windowmanager # $HOME/.xinitrc uses this file.
+
+fi
+
+
+
+# J_Reys idea (see note further down)...
+[ -f $HOME/.XLOADED ] && rm -f $HOME/.XLOADED
+
+if type pcmanfm >/dev/null 2>&1 ; then
+	rm -f $HOME/.cache/menu-cached* $HOME/.cache/pcmanfm* $HOME/.cache/menus/*
+fi
+
+if [ "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] ; then
+	find "$XDG_RUNTIME_DIR" -not -type d -delete
+fi
+
+killall -9 pup_event_frontend_d 2>/dev/null
+
+echo -n "true" > $HOME/.XLOADED
+
+#-- finally, start X... --
+# J_Rey had a good idea, flag XLOADED... and set to false on exit.
+# but if PC hangs, XLOADED will still be true, so will know it is broken.
+if [ -f $HOME/.xinitrc ] ; then
+	XINITRC="$HOME/.xinitrc"
+elif [ -e /etc/X11/xinit/xinitrc ] ; then
+	XINITRC="/etc/X11/xinit/xinitrc"
+fi
+
+echo "$(gettext 'Starting X, specs in /etc/X11/xorg.conf'). ${XINITRC}...."
+
+#-----------------------------------------------------------------------
+if [ "$LOGFILE_X" = "/dev/null" ] ; then
+	echo 'logging of X errors is disabled' > /var/log/xerrs.log
+	echo 'remove /var/local/xwin_disable_xerrs_log_flag to enable it, then restart X' >> /var/log/xerrs.log
+fi
+
+
+export XDG_SESSION_TYPE=x11
+export GDK_BACKEND=x11
+export COGL_BACKEND=x11
+export CLUTTER_BACKEND=x11
+export SDL_VIDEODRIVER=x11
+export QT_QUICK_BACKEND=xcb
+export QT_QPA_PLATFORM=xcb
+	
+export CLUTTER_VBLANK=glx
+
+/usr/bin/xinit ${XINITRC} -- -br -nolisten tcp > $LOGFILE_X 2>&1
+
+#/usr/bin/xinit "$client" $clientargs -- "$server" $display $serverargs
+
+#/usr/bin/xinit ${XINITRC} -- -br -nolisten tcp $display $serverargs > $LOGFILE_X 2>&1
+
+#/usr/bin/xinit ${XINITRC} -- -br -nolisten tcp $display -auth "${xserverauthfile}" > $LOGFILE_X 2>&1
+
+#-----------------------------------------------------------------------
+echo -n "false" > $HOME/.XLOADED #see note above.
+rm -f /tmp/services/x_display
+
+sleep 0.5
+# ...if PC hung, run xorgwizard at next bootup (see further up).
+
+load_consolefont # load console font on exit from X.
+# console font is loaded in quicksetup if locale changed.
+echo '--------'
+echo ''$(gettext 'Exited from X. Type "xwin [jwm]" to restart X ([ ] mean optional).')''
+echo ''$(gettext 'Type "xwin -default [jwm]" to restart X with the default xorg.conf')''
+echo '-'
+echo ''$(gettext '(To shutdown PC type "poweroff", to reboot PC type "reboot")')''
+echo ''$(gettext 'If X failed to start, type "xorgwizard" to setup X')''
+
+[ -f /tmp/wmexitmode.txt ] || exit
+
+# Shutdown menu calls wmreboot, wmpoweroff, wmexit or restartwm, which create this file...
+WMEXITMODE="`cat /tmp/wmexitmode.txt`"
+
+if [ "$WMEXITMODE" == "exit" ];then #see /usr/bin/wmexit.
+	rm -f /tmp/wmexitmode.txt
+	exit
+fi
+
+[ "$WMEXITMODE" == "poweroff" ] && poweroff #see /usr/bin/wmpoweroff
+[ "$WMEXITMODE" == "reboot" ] && reboot #see /usr/bin/wmreboot
+[ "$WMEXITMODE" == "shutdown" ] && shutdown
+
+# restart window manager...
+# make a gross assumption, if wmexitmode.txt exists, haven't already exited this script, then want
+# to restart maybe with different window manager. /etc/windowmanager already has desired w.m.
+rm -f /tmp/wmexitmode.txt #definitely delete it now.
+
+# thanks GuestToo for advice on this, works with chooselocale script...
+NEWLANG="`grep -m 1 '^LANG=' /etc/profile | cut -f 2 -d '='`"
+if [ "$NEWLANG" -a "$NEWLANG" != "$LANG" ];then #precaution
+	export LANG=$NEWLANG
+fi
+
+# hostname-set changed HOSTNAME, via quicksetup, X is restarted,
+# update $HOSTNAME (was exported at bootup in /etc/profile)...
+NEWHOSTNAME="`cat /etc/hostname | tr -d '\n'`"
+
+if [ "$NEWHOSTNAME" -a "$NEWHOSTNAME" != "$HOSTNAME" ];then
+	export HOSTNAME=$NEWHOSTNAME
+fi
+
+exec xwin
+
+### END ###

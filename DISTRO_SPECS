@@ -1,0 +1,29 @@
+#One or more words that identify this distribution:
+DISTRO_NAME='RazorPuppy64'
+#version number of this distribution:
+DISTRO_VERSION=25.01
+#The distro whose binary packages were used to build this distribution:
+DISTRO_BINARY_COMPAT='debian'
+#Prefix for some filenames: exs: RazorPuppy64save.2fs, RazorPuppy64-25.01.sfs
+DISTRO_FILE_PREFIX='RazorPuppy64'
+#The version of the distro whose binary packages were used to build this distro:
+DISTRO_COMPAT_VERSION='current'
+#the kernel pet package used:
+DISTRO_KERNEL_PET='Huge_Kernel'
+DISTRO_XORG_AUTO='yes'
+DISTRO_DB_SUBNAME=''
+DISTRO_TARGETARCH='x86_64'
+BUILD_FROM_WOOF='testing;469bed2d3;2021-04-01 18:24:26 +1000'
+#Puppy default filenames...
+#Note, the 'SFS' files below are what the 'init' script in initrd.gz searches for,
+#for the partition, path and actual files loaded, see PUPSFS and ZDRV in /etc/rc.d/PUPSTATE
+DISTRO_PUPPYSFS='puppy_razorpup64_25.01.sfs'
+DISTRO_ZDRVSFS='zdrv_razorpup64_25.01.sfs'
+DISTRO_FDRVSFS='fdrv_razorpup64_25.01.sfs'
+DISTRO_ADRVSFS='adrv_razorpup64_25.01.sfs'
+DISTRO_BDRVSFS='bdrv_razorpup64_25.01.sfs'
+DISTRO_GDRVSFS='gdrv_razorpup64_25.01.sfs'
+DISTRO_XDRVSFS='xdrv_razorpup64_25.01.sfs'
+DISTRO_NDRVSFS='ndrv_razorpup64_25.01.sfs'
+DISTRO_YDRVSFS='ydrv_razorpup64_25.01.sfs'
+DISTRO_PUPPYDATE='Jan 2025'

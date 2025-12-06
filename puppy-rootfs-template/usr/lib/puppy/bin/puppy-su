@@ -1,0 +1,9 @@
+#!/bin/bash
+yad --title="Authentication Required" \
+    --text="Enter your password:" \
+    --entry --hide-text \
+    --width=500 \
+	--fixed \
+	--button="OK:0" \
+	--button="Cancel:1" \
+    --default-button="OK"

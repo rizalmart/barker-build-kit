@@ -1,0 +1,164 @@
+#!/bin/sh
+#Barry Kauler Dec. 2010, license GPL v3 /usr/share/doc/legal.
+#based on a script by technosaurus, Dec. 2010.
+
+#set -x
+
+[ "`whoami`" != "root" ] && exec sudo -A ${0} ${@} #110505
+
+ISOLATED_DIR="$1"
+
+export TEXTDOMAIN=isolate_builtin
+export OUTPUT_CHARSET=UTF-8
+
+eval_gettext () {
+  local myMESSAGE=$(gettext "$1")
+  eval echo \"$myMESSAGE\"
+}
+
+Yes_lbl="$(gettext 'Yes')"
+No_lbl="$(gettext 'No')"
+
+MSG1="`gettext \"Simple utility to 'isolate' packages contents that are builtin\nto the read-only .sfs file (Squashfs filesystem)\"`"
+FIXMENU='no'
+
+D=/var/packages/builtin_files
+
+
+
+#===========================================================
+
+isolate_builtin_pkg() {
+	
+	PKG=$1
+	
+	if [ -z "$PKG" ] ; then
+		return 1
+	fi
+	if [ ! -f $D/$PKG ] ; then
+		echo "$PKG does not exist.."
+		return 1
+	fi
+	
+	echo "Isolating $PKG"
+	
+    if [ ! -d $ISOLATED_DIR ]; then
+      mkdir -p $ISOLATED_DIR
+    fi
+    	   
+	cat $D/$PKG | sort -r | 
+	while read file1
+	do
+		if [ -f "$file1" ]; then
+		  cp --parents -f "$file1" "$ISOLATED_DIR"
+		  rm -f "$file1"
+		  fldname="$(dirname "$file1")"
+		  [ "$(ls "$fldname")" == "" ] && rmdir "$fldname"
+		elif [ -L "$file1" ]; then
+		  cp --parents -f -P "$file1" "$ISOLATED_DIR"
+		  rm -f "$file1"
+		  fldname="$(dirname "$file1")"
+		  [ "$(ls "$fldname")" == "" ] && rmdir "$fldname"		
+		fi			
+	done
+		
+    prechar="+"
+      
+    if [ -e "/var/packages/package-specs/${PKG}.specs" ]; then
+     reg1=`cat "/var/packages/package-specs/${PKG}.specs" | head -n 1`
+    else
+     reg1=`cat /var/packages/woof-installed-packages | grep "|${PKG}|" | grep -v "$prechar${PKG}"`
+     reg2=`cat /var/packages/woof-installed-packages | grep "${PKG}|" | grep -v "$prechar${PKG}"`
+    fi
+    
+    [ ! -e $ISOLATED_DIR/var/packages/package-specs ] && mkdir -p "$ISOLATED_DIR/var/packages/package-specs"
+    
+    if [ "$reg1" != "" ]; then
+     echo "$reg1" > $ISOLATED_DIR/var/packages/package-specs/${PKG}.specs
+    else
+     echo "$reg2" > $ISOLATED_DIR/var/packages/package-specs/${PKG}.specs
+    fi
+    
+    [ -e /var/packages/package-specs/${PKG}.specs ] && rm -f /var/packages/package-specs/${PKG}.specs
+    
+    [ ! -e $ISOLATED_DIR/var/packages/builtin_files ] && mkdir -p $ISOLATED_DIR/var/packages/builtin_files 
+    
+    mv -f $D/$PKG $ISOLATED_DIR/var/packages/builtin_files/$PKG
+    sed -i "\%|${PKG}|%d" /var/packages/*-installed-packages
+    
+    return 0
+	
+}
+
+#===========================================================
+#                   COMMAND LINE
+#============================================================
+
+case $1 in -l|-list|--list)
+	ls -1 $D
+	exit ;;
+esac
+
+if [ "$1" ] ; then
+	for i in $@
+	do
+		isolate_builtin_pkg $i
+	done
+	fix_menus
+	exit $?
+fi
+
+#===========================================================
+#                    GUI
+#============================================================
+
+PKGS=`ls -1 $D`
+DIALOG="dialog --aspect 10"
+MENUOPT="--checklist"
+REP=/tmp/$(basename $0).txt
+
+if [ "$DISPLAY" ] || [ "$WAYLAND_DISPLAY" ]; then
+	DIALOG=Xdialog
+fi
+
+for i in $PKGS ; do
+	CHOICES="$CHOICES $i . off"
+done
+
+PKG=`$DIALOG --stdout --backtitle "${MSG1}" --title "$(gettext 'Isolate builtin packages')" \
+$MENUOPT "$(gettext 'Select packages to isolate (be careful):')" 0 0 7 $CHOICES`
+if [ ! "$PKG" ];then
+	exit
+fi
+
+PKG=$(echo "$PKG" | sed 's%/% %g')
+/usr/lib/gtkdialog/box_yesno --warning "Isolate builtin pkg(s)" \
+	"Please confirm that you want to isolated the following pkg(s):" "" \
+	"<b>$PKG</b>"
+if [ $? -ne 0 ] ; then
+	exit
+fi
+
+#--
+isolateed_PKGS=''
+#--
+
+if [ "$ISOLATED_DIR" == "" ]; then
+ ISOLATED_DIR="/tmp/sfsroot"
+ mkdir -p "$ISOLATED_DIR"
+else
+ mkdir -p "$ISOLATED_DIR"
+fi
+
+for i in $PKG
+do
+	isolate_builtin_pkg $i || continue
+	isolated_PKGS="$isolated_PKGS $i"
+done
+
+if [ "${isolated_PKGS}" ] ; then
+	/usr/lib/gtkdialog/box_ok "Isolate builtin pkg(s)" info  \
+		"The following packages were isolated at $ISOLATED_DIR:" "" "<b>${isolated_PKGS}</b>"
+fi
+
+### END ###

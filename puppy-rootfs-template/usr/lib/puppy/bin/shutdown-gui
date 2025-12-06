@@ -1,0 +1,312 @@
+#! /bin/bash 
+
+# 4sep12 elroy: save current powermode to /root/.lastpmode. Value to be used by /root/Startup/9acpid on next start to restore last used CPU powermode.
+# 11dec12 Geoffrey: remember last action /root/.shutdown_action
+# 15dec12 elroy: added gtk-update-icon-cache to reduce savefile size.
+# 4sep12 elroy: save current powermode to /root/.lastpmode. Value to be used by /root/Startup/9acpid on next start to restore last used CPU powermode.
+# 19apr13 Geoffrey add extra yad compatible options from version 0.18.0 onward
+# 18sept17 mistfire: add hibernation support
+
+. /etc/rc.d/PUPSTATE
+. /etc/DISTRO_SPECS
+
+
+BUTTON_LAYOUT="--buttons-layout=right"
+FIXED="--fixed"
+VERSION=`yad --version`
+
+SHUTDOWN_GUI_DIR="$HOME/.config/shutdown-gui"
+SHUTDOWN_CONFIG_PATH="$SHUTDOWN_GUI_DIR/shutdown_action"
+
+[ ! -d $SHUTDOWN_GUI_DIR ] && mkdir -p $SHUTDOWN_GUI_DIR
+
+if [ "$VERSION" = 0.12.4 ]; then
+ BUTTON_LAYOUT=""
+ FIXED=""
+fi
+
+[ -e /etc/acpi/powermode ] && echo $(cat /etc/acpi/powermode) > $SHUTDOWN_GUI_DIR/lastpmode
+
+if [ $PUPMODE -eq 77 ] ; then
+   SAVEBUTTON="Save to CD/DVD"
+elif [ $PUPMODE -eq 3 -o $PUPMODE -eq 7 -o $PUPMODE -eq 13 ] ; then
+   SAVEBUTTON="Save Puppy"
+fi
+
+# 11dec12 Geoffrey: remember last action /root/.shutdown_action
+
+LAST_ACTION=""
+
+if [ -e $SHUTDOWN_CONFIG_PATH ]; then
+ LAST_ACTION=`awk 'NR==1' < $SHUTDOWN_CONFIG_PATH 2>/dev/null`
+fi
+
+if [ "$LAST_ACTION" = "" ]; then
+LAST_ACTION="Shutdown"
+else
+LAST_ACTION=$LAST_ACTION
+fi
+
+INIT_BIN=$(readlink /proc/1/exe)
+
+[ -L $INIT_BIN ] && INIT_BIN=$(readlink $INIT_BIN)
+
+if [ "$(basename $INIT_BIN)" == "systemd" ]; then
+ 
+ BOOT_MODE="systemd"
+ 
+else
+
+ BOOT_MODE="sysvinit"
+
+fi
+
+if [ "$WAYLAND_DISPLAY" == "" ]; then
+
+	if [ "$SAVEBUTTON" != "" ]; then
+	action=$(yad $FIXED $BUTTON_LAYOUT --width 380 --entry --title "$DISTRO_NAME $DISTRO_VERSION" \
+	   --window-icon=system-shutdown \
+		--image=system \
+		--button="gtk-ok:0" --button="gtk-cancel:1"\
+		--text "Choose action:" \
+		--entry-text \
+		"$LAST_ACTION" "Shutdown" "Reboot" "Restart X Windows" "Exit to Prompt" "Sleep" "Hibernate" "Lock" "Task Manager" "$SAVEBUTTON")
+	else
+	action=$(yad $FIXED $BUTTON_LAYOUT --width 380 --entry --title "$DISTRO_NAME $DISTRO_VERSION" \
+	   --window-icon=system-shutdown \
+		--image=system \
+		--button="gtk-ok:0" --button="gtk-cancel:1"\
+		--text "Choose action:" \
+		--entry-text \
+		"$LAST_ACTION" "Shutdown" "Reboot" "Restart X Windows" "Exit to Prompt" "Sleep" "Hibernate" "Lock" "Task Manager"\
+		
+		)
+	fi
+
+else
+
+	if [ "$SAVEBUTTON" != "" ]; then
+	action=$(yad $FIXED $BUTTON_LAYOUT --width 380 --entry --title "$DISTRO_NAME $DISTRO_VERSION" \
+	   --window-icon=system-shutdown \
+		--image=system \
+		--button="gtk-ok:0" --button="gtk-cancel:1"\
+		--text "Choose action:" \
+		--entry-text \
+		"$LAST_ACTION" "Shutdown" "Reboot" "Exit to Prompt" "Sleep" "Hibernate" "Lock" "Task Manager" "$SAVEBUTTON")
+	else
+	action=$(yad $FIXED $BUTTON_LAYOUT --width 380 --entry --title "$DISTRO_NAME $DISTRO_VERSION" \
+	   --window-icon=system-shutdown \
+		--image=system \
+		--button="gtk-ok:0" --button="gtk-cancel:1"\
+		--text "Choose action:" \
+		--entry-text \
+		"$LAST_ACTION" "Shutdown" "Reboot" "Exit to Prompt" "Sleep" "Hibernate" "Lock" "Task Manager"\
+		)
+	fi
+
+fi
+
+
+ret=$?
+
+
+[ $ret -eq 1 ] && exit 0
+
+# 15dec12 elroy: added gtk-update-icon-cache to reduce savefile size.
+#gtk-update-icon-cache -f -i /usr/share/icons/hicolor
+
+if [ -e /sys/class/backlight ] || [ "$(ls /sys/class/backlight 2>/dev/null)" != "" ]; then
+ 
+ WMPATH=/etc/windowmanager
+ 
+ [ -e "${HOME}/.config/windowmanager" ] && WMPATH="${HOME}/.config/windowmanager"
+ 	
+ #if [ "$(cat $WMPATH | grep "xfce")" != "" ] && [ "$(which xfpm-power-backlight-helper)" != "" ]; then
+ # pkexec xfpm-power-backlight-helper --get-brightness > ~/.config/last_screen_brightness
+ #fi
+ 
+fi
+
+case $action in
+    Lock*)
+    echo Lock > $SHUTDOWN_CONFIG_PATH
+    Xlock &
+    exit
+    ;;
+    
+    Shutdown*)
+    echo Shutdown > $SHUTDOWN_CONFIG_PATH
+    
+    case $PUPMODE in
+     5|3|7|13|66)
+      pre-shutdown
+      retval=$?
+	  [ $retval -eq 255 ] && exit
+     ;;
+    esac 
+    
+		echo "poweroff" > /tmp/wmexitmode.txt
+        
+        if [ "$BOOT_MODE" == "systemd" ]; then
+         systemctl poweroff
+		elif [ "$(pidof elogind elogind-daemon)" != "" ]; then
+		 loginctl poweroff 0
+		else	 
+		 poweroff
+		fi
+    
+    exit
+    ;;
+    
+    Sleep*)
+    
+    if [ ! -d /proc/acpi ] && [ ! -d /proc/apm ]; then
+     /usr/lib/gtkdialog/box_ok "Notice" error "This computer has lack of power management" "This feature is currently unavailable"
+     exit
+    elif [ ! -d /proc/acpi ] && [ -d /proc/apm ]; then
+     /usr/lib/gtkdialog/box_ok "Notice" error "This feature is not currently unavailable for APM computer"
+     exit
+    else
+		
+		echo Sleep > $SHUTDOWN_CONFIG_PATH
+		
+		if [ "$BOOT_MODE" == "systemd" ]; then
+			systemctl suspend
+		elif [ "$(pidof elogind elogind-daemon)" != "" ]; then
+			loginctl suspend
+		else	 
+			/usr/lib/puppy/lib/acpi/actions/suspend.sh
+		fi
+    
+        exit 0
+   
+    fi
+    ;;
+    
+    Hibernate*)
+    
+    PART=`probepart | grep "|swap|" | cut -f 1 -d '|' | grep -v "zram"`
+    
+    SWAPSIZE=`expr $(cat /proc/swaps | grep -e '/dev/[h|s]d[a-z][0-9]' | head -n 1 | awk '{ print $3 }')`
+
+	if [ "$SWAPSIZE" != "" ]; then
+	SWAPSIZE=`expr $(cat /proc/swaps | grep -e '/dev/[h|s]d[a-z][0-9]' | head -n 1 | awk '{ print $3 }') / 1024`
+	else
+	SWAPSIZE=0
+	fi
+
+	RAMSIZE=$(free | grep -o 'Mem: .*' | tr -s ' ' | cut -f 2 -d ' ')
+
+	if [ "$RAMSIZE" != "" ]; then
+	RAMSIZE=`expr $(free | grep -o 'Mem: .*' | tr -s ' ' | cut -f 2 -d ' ') / 1024`
+	else
+	RAMSIZE=0
+	fi
+        
+    if [ ! -d /proc/acpi ] && [ ! -d /proc/apm ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "This computer has lack of power management" "This feature is currently unavailable"
+    exit
+    elif [ ! -d /proc/acpi ] && [ -d /proc/apm ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "This feature is not currently unavailable for APM computer"
+    exit
+    elif [ ! -e /sys/power/resume ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "Hibernation is currently not supported"
+    exit
+    elif [ $PUPMODE -eq 5 ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "Save your session first"
+    exit
+    elif [ $PUPMODE -eq 77 ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "Hibernation is currently not supported on multisession mode"
+    exit
+    elif [ $PUPMODE -ne 2 ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "Hibernation is only supported on full install mode"
+    exit
+    elif [ "$PART" == "" ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "No swap partition for hibernation"
+    exit
+    elif [ $SWAPSIZE -lt $RAMSIZE ]; then
+    /usr/lib/gtkdialog/box_ok "Notice" error "Unable to hibernate because the swap partition size is smaller than RAM"
+    exit
+    else
+    
+		echo Hibernate > $SHUTDOWN_CONFIG_PATH
+    	
+    	if [ "$BOOT_MODE" == "systemd" ]; then
+			systemctl hibernate
+    	elif [ "$(pidof elogind elogind-daemon)" != "" ]; then
+			loginctl hibernate
+		else	 
+			/usr/lib/puppy/lib/acpi/actions/hibernate.sh
+		fi
+		
+		exit 0
+    fi
+    ;;
+    
+    Reboot*) 
+    echo Reboot > $SHUTDOWN_CONFIG_PATH
+		
+		case $PUPMODE in
+		 5|3|7|13)
+		 pre-shutdown
+		 retval=$?
+		 [ $retval -eq 255 ] && exit
+		 ;;
+		esac
+
+		echo "reboot" > /tmp/wmexitmode.txt
+
+    	if [ "$BOOT_MODE" == "systemd" ]; then
+		 systemctl reboot	
+		elif [ "$(pidof elogind elogind-daemon)" != "" ]; then
+		 loginctl reboot 0
+		else	 
+		 reboot
+		fi
+    
+    exit;;
+    
+    "Restart X Windows"*)
+     
+     if [ "$WAYLAND_DISPLAY" != "" ]; then
+      /usr/lib/gtkdialog/box_ok "Notice" error "Not applicable to wayland session"
+      exit
+     fi
+    
+     echo Restart X Windows > $SHUTDOWN_CONFIG_PATH
+     exec restartwm 
+     exit
+    ;;
+    
+    "Exit to Prompt"*) 
+    echo Exit to Prompt > $SHUTDOWN_CONFIG_PATH
+    exec wmexit &
+    exit
+    ;;
+    
+    "Task Manager"*)
+    echo Task Manager > $SHUTDOWN_CONFIG_PATH
+    exec lxtask &
+    exit
+    ;;
+    "Save Puppy"*)
+    echo $SAVEBUTTON > $SHUTDOWN_CONFIG_PATH
+    exec save2flash &
+    exit 0
+    ;;
+    "Save to CD/DVD"*)
+    echo $SAVEBUTTON > $SHUTDOWN_CONFIG_PATH
+    exec savesession-dvd &
+    exit 0
+    ;;
+    
+    "Change Desktop Environment"*)
+    echo $SAVEBUTTON > $SHUTDOWN_CONFIG_PATH
+    exec desktop-env-switch &
+    exit 0
+    ;;
+    
+    *) exit 1 ;;       
+esac
+
+exit

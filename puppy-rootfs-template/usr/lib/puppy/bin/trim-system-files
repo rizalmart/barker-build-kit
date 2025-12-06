@@ -1,0 +1,404 @@
+#!/bin/sh
+#Remove unneccesary system files
+#written by mistfire
+
+echo "Removing installed bloated files..."
+
+PACKAGE_FILES_DIR="/var/packages/package-files"
+
+rm -rf /usr/man/* 2>/dev/null
+rm -rf /usr/info/* 2>/dev/null
+
+rm -rf /usr/share/man/* 2>/dev/null
+rm -rf /usr/share/licenses/* 2>/dev/null
+rm -rf /usr/share/gtk-doc/* 2>/dev/null
+rm -rf /usr/share/gir-1.0/* 2>/dev/null
+
+#rm -f /usr/lib64/girepository-1.0/Gst*.typelib 2>/dev/null
+#rm -f /usr/lib64/girepository-1.0/Libxfce*.typelib 2>/dev/null
+#rm -f /usr/lib64/girepository-1.0/libxfce*.typelib 2>/dev/null
+
+rm -rf /usr/lib/.build-id 2>/dev/null
+
+rm -rf /usr/include/* 2>/dev/null
+rm -rf /usr/src/* 2>/dev/null
+
+rm -rf /usr/share/gnome/help/* 2>/dev/null
+rm -rf /usr/share/help/* 2>/dev/null
+
+find /usr/doc/ -name "*" -type d -maxdepth 1 | grep -vE '\/doc\/cups|\/doc\/$' | xargs -i rm -rf '{}' 2>/dev/null
+find /usr/share/doc/ -name "*" -type d -maxdepth 1 | grep -vE '\/doc\/$|\/doc\/cups|\/doc\/puppy|\/doc\/grub2config' | xargs -i rm -rf '{}' 2>/dev/null
+
+MAINLANG="$(echo "$LANG" | cut -f 1 -d '.')"
+
+find /usr/share/locale/ -name "*" -type d -maxdepth 1 | grep -vE '\/usr\/share\/locale$|\/usr\/share\/locale\/$|\/en_US|\/en$|\/en_US\/$|\/en\/$|\/'$MAINLANG'*' | xargs -i rm -rf '{}' 2>/dev/null
+
+find /usr -type f -name "*.la" | xargs -i rm -f '{}' 2>/dev/null
+find /usr -type f -name "*.a" | xargs -i rm -f '{}' 2>/dev/null
+
+#rm -f /usr/bin/gtk-builder-convert 2>/dev/null
+rm -f /usr/bin/gtk-demo 2>/dev/null
+
+for gtkver in 2 3 4 5
+do
+ rm -rf "/usr/share/gtk-${gtkver}.0/demo" 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-demo  2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-demo-application 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-builder-tool 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-encode-symbolic 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-encode-symbolic-svg 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-node-editor 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-print-editor 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-icon-browser 2>/dev/null
+ rm -rf /usr/bin/gtk${gtkver}-widget-factory 2>/dev/null
+ rm -rf /usr/share/applications/gtk${gtkver}-demo.desktop 2>/dev/null
+ rm -rf /usr/share/applications/gtk${gtkver}-icon-browser.desktop 2>/dev/null
+ rm -rf /usr/share/applications/gtk${gtkver}-widget-factory.desktop 2>/dev/null
+ rm -rf /usr/share/applications/org.gtk.*${gtkver}.desktop 2>/dev/null
+ rm -rf /usr/share/applications/org.gtk.gtk*${gtkver}.*.desktop 2>/dev/null
+done
+
+
+for gstlib in libgstopencv libgstopenexr libgstzxing libgstqmlgl
+do
+ for gstf in gst-plugins-base gst-plugins-good gst-plugins-bad-free
+ do
+   GSTFOUND="$(cat /var/packages/builtin_files/$gstf | grep "/$gstlib")"
+   [ "$GSTFOUND" != "" ] && cat /var/packages/builtin_files/$gstf | grep "/$gstlib" | xargs -i rm -f '{}'
+ done
+done
+
+
+for pkg2 in harfbuzz netpbm llvm libjpeg-turbo gcc gcc-g++ librsvg libpng libpsl
+do
+ 
+ USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$pkg2|" | cut -f 1 -d '|')"
+ 
+ if [ "$USRPKG" != "" ] && [ -e $USRPKG ]; then
+  PKGF2="$PACKAGE_FILES_DIR/${USRPKG}.files"
+ else
+  PKGF2="/var/packages/builtin_files/$pkg2"
+ fi
+
+ cat $PKGF2 | grep -E "\/bin|\/sbin" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+done
+
+
+#Deal with perl
+for PRL in $(echo $LD_LIBRARY_PATH | sed -e 's#:#\/perl5\ #g') /usr/share/perl5
+do
+
+ if [ "$(echo "$PRL" | grep "perl")" != "" ] && [ -e $PRL ]; then
+  
+  find $PRL -name "*.pod" -type f | xargs -i rm -rf '{}'
+  find $PRL -name "*.h" -type f | xargs -i rm -rf '{}'
+  
+  [ -e $PRL/CORE ] && find $PRL/CORE -name "*" -type f | grep -vE "*\.so" | xargs -i rm -rf '{}'
+  
+  [ -e $PRL/pod ] && rm -rf $PRL/pod/* 2>/dev/null
+  
+   for prlang in JP KR CN TW
+   do
+    [ -e $PRL/auto/Encode/$prlang ] && rm -rf $PRL/auto/Encode/$prlang
+   done
+   
+ fi
+
+done
+
+ rm -rf /usr/share/perl5/Test
+ rm -rf /usr/share/perl5/Test2
+ rm -f /usr/share/perl5/unicore/TestNorm.pl
+ rm -f /usr/share/perl5/Test.pm
+ rm -f /usr/share/perl5/Test2.pm
+
+####
+
+rm -rf /usr/lib64/guile/3.0/ccache/*
+
+
+rm -rf /usr/share/ffmpeg/examples/* 2>/dev/null
+
+
+for libc in glibc glibc-so-libs aaa_glibc-solibs
+do
+
+	BPKG="$libc"
+	
+	USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+	
+	if [ "$USRPKG" != "" ]; then
+	 PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+	else
+	 PKGF=/var/packages/builtin_files/$BPKG
+	fi
+
+	[ -e $PKGF ] && cat $PKGF | grep -E "\/bin|\/sbin" | grep -vE '*\/$' | grep -vE "getent|iconv|ldd|locale|localedef|zdump|zic|tzselect|iconvconfig|nscd|zic|ldconfig|sln" | xargs -i rm -f '{}'
+
+done
+
+
+BPKG="samba"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "*python*|*smbtorture*|*\/share\/samba\/setup\/ad\-schema\/*|*\/share\/samba\/setup\/display\-specifiers\/*" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="llvm"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "*clang*|*lldb*|*libexec*|*\/libfindAllSymbols*|*\/libomp*|*\/LLVMPolly*|*\/libMLIR*|*\/libmlir*" | grep -vE "libclangHandleLLVM\.so*|libclang\.so*" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="gcc"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "\/lib|\/libexec" | grep "/gcc" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="gcc-g++"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -v "libstdc*" | grep -E "pkgconfig|cmake|vala" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="vulkan-sdk"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -vE '*\/$' | grep -vE "vulkaninfo|vkcube|libHLSL\.so|libSPIRV-Tools-shared\.so|libSPIRV-Tools-link\.so|libSPIRV-Tools\.so|libSPIRV-Tools-opt\.so|libSPIRV\.so|libSPVRemapper\.so|libglslang\.so|libglslang-default-resource-limits\.so|libvulkan\.so|libshaderc_shared\.so|pkgconfig|cmake|vala" | xargs -i rm -f '{}'
+
+
+BPKG="icu4c"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "\/bin|\/sbin" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="aaa_libraries"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+if [ -e $PKGF ]; then
+ cat $PKGF | grep -E "/libicu*" | grep -vE '*\/$' | 
+ while read -r LINE1
+ do
+  if [ -f "$LINE1" ]; then
+   [ "$(grep -m 1 "$LINE1" /var/packages/builtin_files/icu4c)" == "" ] && rm -f "$LINE1" 
+  fi 
+ done
+fi
+
+
+BPKG="gtk+3"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "*demo*" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="spirv-llvm-translator"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "\/bin|\/sbin" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="mesa"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "\/libRusticlOpenCL\.so*|\/libMesaOpenCL\.so*" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="libjpeg-turbo"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "\/bin|\/sbin" | grep -vE '*\/$' | xargs -i rm -f '{}'
+
+
+BPKG="speech-dispatcher"
+USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+if [ "$USRPKG" != "" ]; then
+ PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+else
+ PKGF=/var/packages/builtin_files/$BPKG
+fi
+
+[ -e $PKGF ] && cat $PKGF | grep -E "\/speech-dispatcher\/locale\/" | grep -vE 'en|es|base' | grep -vE '*\/$' | xargs -i rm -rf '{}'
+
+#Check for python executable
+PYF=""
+
+for py1 in python python2 python3 python4 python5
+do
+ if [ "$(which $py1)" != "" ]; then
+   PYF="y"
+   break     
+ fi
+done
+
+#Remove python files in python is not present
+if [ "$PYF" == "" ]; then
+
+ for pyver in 2.7 3.9 3.10
+ do
+  
+  pyptn="$(echo $pvver | sed -e 's#\.#\\\.#g')"
+  
+  for pylib in $(echo $LD_LIBRARY_PATH | sed -e 's#:#\/'$pyptn'\ #g')
+  do
+   if [ "$(echo "$pylib" | grep "python")" != "" ] && [ -e $pylib ]; then
+    rm -rf $pylib/*
+   fi
+  done
+  
+ done
+ 
+else
+
+    for pyver in 2.7 3.9 3.10
+    do
+      for libp in $(echo $LD_LIBRARY_PATH | tr ':' ' ')
+      do
+        if [ -d $libp/$pyver ]; then
+          find $libp/$pyver -type d -name "test" | xargs -i rm -rf '{}'
+          find $libp/$pyver -type d -name "demo" | xargs -i rm -rf '{}'
+        fi
+      done
+    done 
+
+fi
+
+#Ibus
+find /usr/share/ibus/dicts -type f -name "*" | grep -vE "emoji-en\.dict|emoji-pcm\.dict|emoji-root\.dict|unicode-*" | xargs -i rm -f '{}'
+
+fix-folder-permissions
+
+if [ -f /bin/su ]; then
+ rm -f /bin/su 2>/dev/null
+ ln -s /bin/busybox /bin/su
+fi
+
+
+echo "Removing broken symlinks..."
+
+for binpath2 in $(echo $PATH | tr ':' '\n' | grep -vE '/root|/lib/puppy' | tr '\n' ' ')
+do
+ if [ -e $binpath2 ]; then
+  find $binpath2 -maxdepth 1 -type l ! -exec test -e {} \; -print | xargs -i rm -f '{}'
+ fi
+done
+
+
+for libpath2 in $(echo $LD_LIBRARY_PATH | tr ':' ' ')
+do
+ if [ -e $libpath2 ]; then
+  find $libpath2 -maxdepth 1 -type l ! -exec test -e {} \; -print | xargs -i rm -f '{}'
+ fi
+done
+
+find /usr/libexec -maxdepth 1 -type l ! -exec test -e {} \; -print | xargs -i rm -f '{}'
+
+for mozver in 01 02 03 04 05 06 07 08 09 10
+do
+ [ -e /usr/bin/js1${mozver} ] && rm -f /usr/bin/js1${mozver}
+done
+
+
+if [ -f /etc/audio-server ]; then
+
+    . /etc/audio-server
+    
+    if [ "$AUDIO_SERVER" == "pipewire" ]; then
+		
+		/usr/sbin/pipewire-enable.sh
+		
+		BPKG="pulseaudio"
+		USRPKG="$(cat /var/packages/user-installed-packages 2>/dev/null | grep "|$BPKG|" | cut -f 1 -d '|')"
+		
+		if [ "$USRPKG" != "" ]; then
+		 PKGF=$PACKAGE_FILES_DIR/${USRPKG}.files
+		else
+		 PKGF=/var/packages/builtin_files/$BPKG
+		fi
+
+		[ -e $PKGF ] && cat $PKGF | grep -vE "\/libpulsecommon|\/libpulsecore|\/libpulsedsp|\/libpulse\.so|\/libpulse-mainloop|\/libpulse-simple|\/etc\/pulse\/client.conf|pacat|pactl|padsp|pamon|paplay|parec|parecord|cmake|pkgconfig|vala" | grep -vE '*\/$' | xargs -i rm -f '{}'
+		
+		#rm -f /etc/xdg/autostart/pipewire.desktop
+		#rm -f /etc/xdg/autostart/pipewire-pulse.desktop
+		#rm -f /etc/xdg/autostart/wireplumber.desktop
+		
+    else
+        /usr/sbin/pipewire-disable.sh        
+    fi
+    
+fi
+
+chmod +x /etc/init.d/rc.cups
+chmod +x /etc/init.d/rc.cups-browsed
+
+for libfld in /usr/lib /usr/lib64
+do
+rm -f $libfld/gconv/KOI*.so
+rm -f $libfld/gconv/EBCDIC-*.so
+#rm -f $libfld/gconv/IBM*.so
+rm -f $libfld/gconv/EUC-*.so
+rm -f $libfld/gconv/HP-*.so
+rm -f $libfld/gconv/GREEK*.so
+rm -f $libfld/gconv/INIS*.so
+rm -f $libfld/gconv/GEORGIAN*.so
+done
+
+rm -rf /usr/libexec/gcc/*

@@ -1,0 +1,31 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# xdialog (main branch)
+wget -O gadmin-samba-gtk3.zip \
+  https://github.com/rizalmart/gadmin-samba-gtk3/archive/refs/heads/main.zip
+
+echo "Extracting..."
+unzip gadmin-samba-gtk3.zip
+
+echo "Building gadmin-samba..."
+cd "gadmin-samba-gtk3-main"
+automake --add-missing
+libtoolize
+chmod +x ./configure
+./configure --prefix=/usr/local --sysconfdir=/etc --localstatedir=/var --sbindir=/usr/local/sbin --docdir=/usr/local/share/doc \
+ SYSINIT_START_CMD="systemctl enable smbd" \
+ SYSINIT_STOP_CMD="systemctl disable smbd" CFLAGS="-g -O2 -Wall -fpermissive"
+ make
+ make install
+
+cd /tmp
+
+rm -rf ${WORKDIR}

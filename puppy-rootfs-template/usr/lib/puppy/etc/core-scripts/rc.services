@@ -1,0 +1,51 @@
+#!/bin/ash
+#(c) Copyright Barry Kauler Nov. 2010. License GPL v3 /usr/share/doc/legal.
+
+#wait for snd_ modules to complete loading...
+#this sleep benefits all slow peripherals.
+sleep 6
+
+echo "" > /var/log/service-start.log
+
+exec 2>/var/log/service-start.log
+
+for service_script in $(ls -1 /etc/init.d/* 2>/dev/null | sort | grep -vE '\/rc$|\/rc[0-9]$|\/rc\.[0-9]$|\/rcS$|\/rc\.M$|\/rc\.K$|\/rc\.S$|\/rc\.sysvinit$|\/rc\.sysinit$|\/functions$|\/functions_x$|\/*\.txt$|\/*\.TXT$|\/README$' 2>/dev/null | tr '\n' ' ')
+do
+ 
+ if [ -x $service_script ] && [ "$(head -n 1 $service_script | grep -E '^#!')" != "" ]; then
+  
+  RUN_SRV=""
+  
+  #Check if the script contains dbus-daemon
+  IS_DBUS=""
+  IS_UDEV=""
+  IS_NETWORK=""
+    
+  [ "$(grep -m 1 "dbus-daemon" $service_script)" != "" ] && IS_DBUS="y"
+  [ "$(grep -m 1 "udevd" $service_script)" != "" ] && IS_UDEV="y"
+  [ "$(grep -m 1 -E "NetworkManager|connmand" $service_script)" != "" ] && IS_NETWORK="y"
+
+  if [ "$IS_DBUS" == "" ] && [ "$IS_UDEV" == "" ] && [ "$IS_NETWORK" == "" ]; then
+   RUN_SRV="y"
+  elif [ "$IS_DBUS" != "" ] && [ "$(pidof dbus-daemon)" == "" ]; then
+   #run dbus-daemon script if the dbus-daemon is not running
+   RUN_SRV="y"	
+  elif [ "$IS_UDEV" != "" ] && [ "$(pidof udevd)" == "" ]; then
+   #run udevd script if the udevd is not running
+   RUN_SRV="y"	
+  elif [ "$IS_NETWORK" != "" ] && [ "$(pidof NetworkManager connmand)" == "" ]; then
+   #run network script if the dbus-daemon is not running
+   RUN_SRV="y"
+  fi
+  
+  if [ "$RUN_SRV" != "" ]; then
+   echo "Executing $service_script" >> /var/log/service-start.log
+   $service_script start >> /var/log/service-start.log &
+  fi
+  
+ fi
+done
+
+unset service_script
+
+###END###

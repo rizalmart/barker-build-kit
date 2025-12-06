@@ -1,0 +1,71 @@
+#!/bin/sh
+#2007 Lesser GPL licence v2 (http://www.fsf.org/licensing/licenses/lgpl.html)
+
+. /etc/rc.d/PUPSTATE
+
+case $PUPMODE in
+3|7|13)
+    echo "Pupmode: $PUPMODE" 
+;;
+*)
+	echo "save2flash: Wrong PUPMODE ($PUPMODE)"
+	exit 1
+;;
+esac
+
+WCOMPOSITOR="$(cat /etc/wayland-compositors.list 2>/dev/null | tr '\n' ' ')"
+
+if [ "$(busybox pidof X Xorg $WCOMPOSITOR)" != "" ]; then
+
+	[ -z "$DISPLAY" ] && export DISPLAY=':0'
+	
+	[ -z "$WAYLAND_DISPLAY" ] && export WAYLAND_DISPLAY='wayland-0'
+	
+	[ -z "$XDG_RUNTIME_DIR" ] && export XDG_RUNTIME_DIR='/run/runtime-root'
+	
+fi
+
+if busybox pidof snapmergepuppy 2>/dev/null ; then
+	echo "snapmergepuppy is running"
+	exit 1
+fi
+
+if [ "$1" = "pup_event" ] ; then
+
+	PBLOCKERS=$(cat /etc/oddpupmode-blockers.list 2>/dev/null | tr '\n' ' ')
+
+	#some apps should not be disturbed by this background stuff...
+	if [ "$(busybox pidof $PBLOCKERS 2>/dev/null)" != "" ] ; then
+		exit 1
+	fi
+
+fi
+
+MSG="$(gettext "Saving RAM to 'pup_save'...")"
+
+if [ -n "$DISPLAY" -o -n "$WAYLAND_DISPLAY" ] ; then
+    
+    if [ "$(which notify-send)" != "" ]; then
+      notify-send -i floppy -t 10000 "Puppy Session" "$MSG" &
+    else
+	  yaf-splash -bg orange -placement top -close never -text "$MSG" &
+	  YAFPID=$!
+    fi
+
+else
+	echo "Saving RAM to 'pup_save'..."
+fi
+
+sync
+
+if [ "$PUNIONFS" == "overlay" ]; then
+ nice -n 19 /usr/lib/puppy/sbin/snapmergepuppy_overlay
+else
+ nice -n 19 /usr/lib/puppy/sbin/snapmergepuppy
+fi
+
+[ "$YAFPID" != "" ] && kill $YAFPID
+
+exit 0
+
+### END ###

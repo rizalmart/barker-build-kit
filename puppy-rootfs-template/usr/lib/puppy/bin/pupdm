@@ -1,0 +1,40 @@
+#!/bin/bash
+#display-manager launcher
+#written by mistfire
+
+
+DMS="lightdm sddm gdm lxdm slim xdm ly cdm emptty lidm lemurs tdsm"
+
+TARGET_DM=""
+
+#find available display manager
+for DM1 in $DMS
+do
+  if [ "$(which $DM1)" != "" ]; then
+   TARGET_DM="$DM1"
+   break 
+  fi
+done
+
+
+if [ "$TARGET_DM" != "" ]; then
+
+    retval=0
+
+	echo "Starting display manager: ${TARGET_DM}"
+	sleep 1
+	exec $TARGET_DM
+	
+	retval=$?
+	
+	if [ $retval -eq 0 ]; then
+	  exit
+	else
+	  echo "The display manager failed to run. Fallback to command line login"
+      echo ""
+    fi
+    
+fi
+
+
+exec getty 115200 tty1

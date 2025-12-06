@@ -1,0 +1,14 @@
+[Unit]
+Description=Puppy shutdown process
+After=umount.target shutdown.target
+Before=final.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/puppy/etc/core-scripts/rc.shutdown systemd
+StandardInput=tty-force
+StandardOutput=tty-force
+
+[Install]
+WantedBy=poweroff.target reboot.target halt.target

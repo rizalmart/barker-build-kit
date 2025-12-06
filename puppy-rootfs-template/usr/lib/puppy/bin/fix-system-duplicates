@@ -1,0 +1,6 @@
+#!/bin/sh
+
+for fld in bin lib lib64 sbin usr var/lib/flatpak
+do
+ [ -d /$fld ] && find /$fld -type d | xargs -i fix-duplicates '{}'
+done

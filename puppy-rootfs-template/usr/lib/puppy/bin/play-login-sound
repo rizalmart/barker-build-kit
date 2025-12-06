@@ -1,0 +1,16 @@
+#!/bin/sh
+
+TICK=1
+TIMEOUT=10
+
+while [ "$(pidof pipewire-pulse pulseaudio)" == "" ]
+do
+  if [ $TICK -ge $TIMEOUT ]; then
+   break
+  else
+   TICK=$(expr $TICK + 1)
+   sleep 1
+  fi 
+done
+ 
+[ "$(pidof pipewire-pulse pulseaudio)" != "" ] && exec aplay -D sysdefault /usr/share/audio/sys-login.wav

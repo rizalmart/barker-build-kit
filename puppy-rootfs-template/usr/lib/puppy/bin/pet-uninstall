@@ -1,0 +1,284 @@
+#!/bin/bash
+# remove-pet.sh  —  Uninstall a PET package cleanly
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <package-name>"
+    exit 1
+fi
+
+PKG="$1"
+
+DB_DIR="/var/lib/petget"
+FILES_DIR="$DB_DIR/package-files"
+SPECS_DIR="$DB_DIR/package-specs"
+SCRIPTS_DIR="$DB_DIR/package-scripts"
+USER_DB="$DB_DIR/user-installed-packages"
+
+PKGLOC=2
+PKGNAME="$(grep -m 1 "|${PKG}|" "$USER_DB" | cut -f 2 -d '|')"
+
+if [ "$PKGNAME" == "" ]; then
+ PKGNAME="$(grep -m 1 "^${PKG}|" "$USER_DB" | cut -f 1 -d '|')"
+ PKGLOC=1
+fi
+
+if [ "$PKGNAME" == "" ]; then
+    echo "Error: Package not found."
+    exit 1
+fi
+
+FILELIST="$FILES_DIR/${PKGNAME}.files"
+SPECFILE="$SPECS_DIR/${PKGNAME}.specs"
+REMOVESCRIPT="$SCRIPTS_DIR/${PKGNAME}.remove"
+INSTALLSCRIPT="$SCRIPTS_DIR/${PKGNAME}.install"
+
+if [ ! -f "$FILELIST" ]; then
+    echo "Error: Package file list not found: $FILELIST"
+    exit 1
+fi
+
+pet_update_system_cache(){
+
+	PKGFILES=${1}
+
+	GTKVERLIST="2.0 3.0 4.0 5.0 6.0"
+
+
+	if [ "$XDG_DATA_DIRS" != "" ]; then
+	 SHAREPATH=`echo $XDG_DATA_DIRS | tr ':' ' '`
+	else
+	 SHAREPATH="/usr/share /usr/local/share"
+	fi
+
+	if [ "$LD_LIBRARY_PATH" != "" ]; then
+	 LIBDIRS=`echo $LD_LIBRARY_PATH | tr ':' ' '`
+	else
+	 LIBDIRS="/lib /usr/lib /usr/local/lib"
+	fi
+
+	FONT_FOUND=""
+	PANGO_FOUND=""
+	GDK_FOUND=""
+	GTKIM_FOUND=""
+
+	for usrfld in $SHAREPATH
+	do
+
+	  if grep -q -m 1 "$usrfld/glib-2.0/schemas" $PKGFILES ; then
+		  [ "$(which glib-compile-schemas)" != "" ] && glib-compile-schemas $usrfld/glib-2.0/schemas 2>/dev/null
+	  fi
+
+	  if grep -q -m 1 "$usrfld/applications/" $PKGFILES ; then
+		if [ "$(which update-desktop-database)" != "" ] ; then
+		 rm -f $usrfld/applications/mimeinfo.cache 2>/dev/null
+		 update-desktop-database $usrfld/applications 2>/dev/null
+		fi
+	  fi
+
+	  if grep -q -m 1 "$usrfld/mime/" $PKGFILES ; then
+	  
+		[ "$(which update-mime-database)" != "" ] && update-mime-database $usrfld/mime 2>/dev/null
+		
+		if [ -e "$usrfld/mime/packages" ] && [ "$(ls -1 "$usrfld/mime/packages")" == "" ]; then
+		 rm -rf $usrfld/mime/*
+		fi
+		
+	  fi
+
+	  if grep -q -m 1 "$usrfld/icons/" $PKGFILES ; then
+		
+		for gtkcmd in gtk gtk4
+		do
+		 if [ "$(which ${gtkcmd}-update-icon-cache)" != "" ] ; then  
+		  find "$usrfld/icons/" -name "icon-theme.cache" -type f | xargs -i rm -f '{}'
+		  find "$usrfld/icons/" -maxdepth 1 -mindepth 1 -type d | xargs -i ${gtkcmd}-update-icon-cache -f -i '{}' 2>/dev/null
+		  break
+		 fi
+		done
+		
+	  fi
+	  
+	  if [ "$(grep -m 1 '$usrfld/fonts/' $PKGFILES)" != "" ]; then
+	   [ "$FONT_FOUND" == "" ] && FONT_FOUND="y"
+	  fi
+
+	done
+
+
+	for libfld in $LIBDIRS
+	do
+		
+		if grep -q -m 1 "$libfld/gio/modules" $PKGFILES ; then
+		 [ "$(which gio-querymodules)" != "" ] && gio-querymodules $libfld/gio/modules 2>/dev/null
+		fi
+			
+		if [ "$(grep -m 1 '$libfld/gdk-pixbuf' $PKGFILES)" != "" ]; then
+		  [ "$GDK_FOUND" == "" ] && GDK_FOUND="y"
+		fi
+
+		if [ "$(grep -m 1 '$libfld/pango/' $PKGFILES)" != "" ]; then
+		  [ "$PANGO_FOUND" == "" ] && PANGO_FOUND="y"
+		fi
+
+		if [ "$(grep -m 1 "$libfld/gtk-$GTKVER" $PKGFILES | grep -m 1 "/immodules")" != "" ]; then
+		  [ "$GTKIM_FOUND" == "" ] && GTKIM_FOUND="y"
+		fi
+
+	done
+
+	[ "$FONT_FOUND" != "" ] && fc-cache -f
+
+	if [ "$GDK_FOUND" != "" ]; then
+		if [ "$(which update-gdk-pixbuf-loaders)" != "" ] ; then
+		 update-gdk-pixbuf-loaders
+		else
+		 gdk-pixbuf-query-loaders --update-cache 2>/dev/null
+		fi
+	fi
+
+	if [ "$PANGO_FOUND" != "" ]; then
+		if [ "$(which update-pango-querymodules)" != "" ] ; then
+			update-pango-querymodules
+		else
+			pango-querymodules --update-cache 2>/dev/null
+		fi
+	fi
+
+	if [ "$GTKIM_FOUND" != "" ]; then
+		for GTKVER in $GTKVERLIST
+		do
+			if [ "$(which update-gtk-immodules-$GTKVER)" != "" ] ; then
+			  update-gtk-immodules-$GTKVER
+			else
+			  gtk-query-immodules-$GTKVER --update-cache 2>/dev/null
+			fi
+		done
+	fi
+		
+
+
+	if grep -q -m 1 "/etc/ld.so.conf.d/" $PKGFILES ; then
+	  ldconfig
+	fi
+
+	if grep -q -m 1 "/lib/modules/$(uname -r)/" $PKGFILES ; then
+	  depmod -a
+	fi
+
+	if grep -q -m 1 "/gconv/" $PKGFILES ; then
+	  iconvconfig 2>/dev/null
+	fi
+
+	if [ "$(grep -m 1 '/udev/hwdb.d/' $PKGFILES)" != "" ]; then
+	  [ "$(udevadm --help 2>&1 | grep hwdb)" != "" ] && udevadm hwdb --update
+	fi
+
+	if [ "$(grep -m 1 '/udev/rules.d/' $PKGFILES)" != "" ]; then
+	 if [ "$(pidof udevd systemd-udevd)" != "" ]; then 
+		udevadm control --reload-rules
+		udevadm trigger
+	 fi
+	fi
+
+	if grep -q -m 1 "/etc/dconf/db/" $PKGFILES ; then
+	  dconf update
+	fi
+
+}
+
+
+echo "[*] Uninstalling PET package: $PKGNAME ..."
+
+[ -f /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+[ "$PUPMODE" == "" ] && PUPMODE=2
+
+PUPREM=$(expr $PUPMODE % 2)
+
+[ "$PUPREM" == "" ] && PUPREM=0
+[ $PUPREM -ne 0 ] && ODD_PUPMODE="y"
+
+[ "$(echo $ROOTFS | grep -E 'aufs|overlay')" != "" ] && PREFIX_DIR="/run/initramfs"
+
+TARGET_INSTALL_DIR=""
+
+[ "$ODD_PUPMODE" != "" ] && TARGET_INSTALL_DIR="${PREFIX_DIR}/pup_rw"
+
+ROOTFS="$(mount | grep " on / " | awk '{ print $5 }')"
+
+cat "$FILELIST" | sort -r > "$FILELIST.tmp"
+
+mv -f "$FILELIST.tmp" "$FILELIST"
+
+# 3. delete files listed (skip missing ones)
+while IFS= read -r fline; do
+
+    # Ensure path is absolute relative to /
+    TARGET_FILE="$fline"
+
+    if [ "$TARGET_FILE" != "" ];then
+		if [ -f "$TARGET_FILE" ]; then
+
+			rm -f "$TARGET_FILE"
+
+			if [ $PUPMODE -ne 5 ]; then
+
+				BNAME=$(basename $TARGET_FILE)
+				DNAME=$(dirname $TARGET_FILE)
+
+				[ -f ${PREFIX_DIR}${SAVE_LAYER}${TARGET_FILE} ] && rm -f "${PREFIX_DIR}${SAVE_LAYER}${TARGET_FILE}"
+
+				if [ "$ROOTFS" == "aufs" ]; then
+					[ -f ${PREFIX_DIR}${SAVE_LAYER}/${DNAME}/.wh.${BNAME} ] && rm -f "${PREFIX_DIR}${SAVE_LAYER}/${DNAME}/.wh.${BNAME}"
+				fi
+
+			fi
+
+		elif [ -d "$TARGET_FILE" ]; then
+
+		   [ "$TARGET_FILE" != "/" ] && rmdir "$TARGET_FILE" 2>/dev/null
+
+		fi
+	fi
+
+done < "$FILELIST"
+
+[ "$ROOTFS" == "aufs" ] && busybox mount -t aufs -o remount,udba=reval unionfs / #remount with faster evaluation mode.
+[ "$ROOTFS" == "overlay" ] && busybox mount -t overlay -o remount /
+
+echo
+
+# 4. run uninstall script if exists
+if [ -x "$REMOVESCRIPT" ]; then
+    echo "[*] Running uninstall script: $REMOVESCRIPT"    
+    chmod +x "$REMOVESCRIPT"
+    "$REMOVESCRIPT"
+fi
+
+echo "[*] Updating system cache..."
+pet_update_system_cache "$FILELIST"
+
+# 5. delete DB entries
+
+echo "[*] Removing database entries..."
+
+# 6. remove entry from user-installed-packages
+if [ $PKGLOC -eq 2 ]; then
+	grep -v "|${PKGNAME}|" "$USER_DB" > "$USER_DB.tmp"
+else
+	grep -v "^${PKGNAME}|" "$USER_DB" > "$USER_DB.tmp"
+fi
+
+cat "$USER_DB.tmp" | sort > "$USER_DB"
+
+rm -f "$USER_DB.tmp"
+
+rm -f "$SPECFILE"
+rm -f "$FILELIST"
+
+[ -f "$REMOVESCRIPT" ] && rm -f "$REMOVESCRIPT"
+[ -f "$INSTALLSCRIPT" ] && rm -f "$INSTALLSCRIPT"
+
+echo
+echo "[+] Package '$PKGNAME' successfully uninstalled."
+exit 0

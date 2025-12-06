@@ -1,0 +1,62 @@
+#!/bin/ash
+#110505 support sudo for non-root user.
+#140622 shinobar avoid freeze on a virtual terminal
+
+script=""
+
+for i in $@ ; do
+	case $i in
+		debug) echo > /tmp/debugshutdown ; shift ;;
+		shell) echo > /tmp/shutdownshell ; shift ;;
+		-r)
+		  if [ "${0##*/}" == "shutdown" ] && [ "$script" == "" ]; then
+		   script="reboot"
+		  fi
+		shift ;;
+	esac
+done
+
+if [ "$script" == "" ]; then
+ script=${0##*/}
+fi
+
+if [ -d /proc/acpi ] || [ -e /proc/apm ]; then
+ can_shutdown=1
+else
+ can_shutdown=0
+fi
+
+. /etc/rc.d/PUPSTATE
+
+if [ "$PUPMODE" = "5" ] && [ $PPID -eq 1 ] ; then
+	touch /tmp/shutdownconfig_results ; sync  #skip shutdownconfig
+fi
+
+[ "`whoami`" != "root" ] && exec sudo -A ${0} ${@} #110505
+
+if [ "$DISPLAY" ] ; then
+	case $script in
+		poweroff)  exec wmpoweroff ;; #avoid freeze on a virtual terminal
+		reboot) exec wmreboot ;;
+	esac
+fi
+
+/usr/lib/puppy/etc/core-scripts/rc.shutdown
+
+case $script in
+	poweroff) 
+	
+	 if [ $can_shutdown -eq 1 ]; then
+	  /bin/busybox poweroff
+	 else
+	  clear > /dev/console
+	  dialog --ok-label "Restart" --msgbox "IT'S NOW SAFE TO TURN OFF YOUR COMPUTER" 5 43
+	  /bin/busybox reboot
+	 fi
+	
+	;;
+	
+	reboot) /bin/busybox reboot ;;
+esac
+
+### END ###

@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+PKGNAME="$1"
+DBPATH="/var/lib/pacman/local"
+PKGDIR_PATTERN="$DBPATH/${PKGNAME}-"*
+PKGDIR=$(ls -d $PKGDIR_PATTERN 2>/dev/null | head -n1)
+
+if [ ! -d "$PKGDIR" ]; then
+    echo "Package directory not found for $PKGNAME"
+    exit 1
+fi
+
+# Initialize associative array
+declare -A HASHMAP
+
+grep -v '/$' "$PKGDIR/files" | while IFS= read -r FILE; do
+
+    FULL="/$FILE"
+
+    # Ignore non-regular files or existing symlinks
+    if [ ! -f "$FULL" ] || [ -L "$FULL" ]; then
+        continue
+    fi
+
+    HASH=$(sha256sum "$FULL" | awk '{print $1}')
+
+    if [ -n "${HASHMAP[$HASH]:-}" ]; then
+        
+        ORIGINAL="${HASHMAP[$HASH]}"
+        
+        if [ "$FULL" != "$ORIGINAL" ]; then
+            echo "Deduplicating: $FULL => $ORIGINAL"
+            rm -f -- "$FULL"
+            ln -s --relative "$ORIGINAL" "$FULL"
+        fi
+        
+    else
+        HASHMAP[$HASH]="$FULL"
+    fi
+
+done
+

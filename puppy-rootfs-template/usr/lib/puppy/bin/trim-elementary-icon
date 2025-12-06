@@ -1,0 +1,37 @@
+#!/bin/sh
+
+ fld="elementary"
+
+ for subfld in actions mimes devices status categories places apps
+ do
+
+	 if [ -d /usr/share/icons/$fld/$subfld/24 ]; then
+	  
+	  if [ ! -L /usr/share/icons/$fld/$subfld/24 ]; then
+		rm -rf /usr/share/icons/$fld/$subfld/24
+		ln -sr /usr/share/icons/$fld/$subfld/16 /usr/share/icons/$fld/$subfld/24
+	  fi
+	   
+	 fi
+
+	 for icn1 in 48 64 128 256
+	 do
+	
+		 if [ -d /usr/share/icons/$fld/$subfld/$icn1 ]; then
+		  
+		  if [ ! -L /usr/share/icons/$fld/$subfld/$icn1 ]; then
+			rm -rf /usr/share/icons/$fld/$subfld/$icn1
+			ln -sr /usr/share/icons/$fld/$subfld/32 /usr/share/icons/$fld/$subfld/$icn1
+		  fi
+		   
+		 fi
+	 
+	 done
+
+done
+ 
+ 
+ 
+ find /usr/share/icons/$fld -type d | xargs -i fix-duplicates '{}'
+ 
+

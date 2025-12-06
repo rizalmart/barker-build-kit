@@ -1,0 +1,27 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# xdialog (main branch)
+wget -O isomaster3.zip \
+  https://github.com/rizalmart/isomaster3/archive/refs/heads/main.zip
+
+echo "Extracting..."
+unzip isomaster3.zip
+
+echo "Building isomaster3..."
+cd "isomaster3-main"
+export WITHOUT_NLS=1
+export PREFIX=/usr/local
+make
+make install  # Usually goes to /usr/local/bin by default
+
+cd /tmp
+
+rm -rf ${WORKDIR}

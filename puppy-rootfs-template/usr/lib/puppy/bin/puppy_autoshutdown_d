@@ -1,0 +1,62 @@
+#!/bin/ash
+# shutdown computer after a period of mouse inactivity
+
+. /etc/eventmanager
+
+if [ "$POWERTIMEOUT" = "" -o "$POWERTIMEOUT" = "0" ] ; then
+	exit
+fi
+
+MINUTE=0;
+MOUSECNT=0
+CURPOS1=""
+CURPOS2=""
+
+INIT_BIN=$(readlink /proc/1/exe)
+
+[ -L $INIT_BIN ] && INIT_BIN=$(readlink $INIT_BIN)
+
+if [ "$(basename $INIT_BIN)" == "systemd" ]; then
+ 
+ BOOT_MODE="systemd"
+ 
+else
+
+ BOOT_MODE="sysvinit"
+
+fi
+
+while [ 1 ]
+do
+
+	sleep 60
+
+	MINUTE=$((MINUTE+1))
+
+	if [ $POWERTIMEOUT -ne 0 ]; then #power-off computer after inactivity.
+		
+		MOUSECNT=$(( $MOUSECNT + 1 ))
+		CURPOS2="`getcurpos`"
+		
+		[ -z "$CURPOS1" ] && CURPOS1="$CURPOS2"
+		
+		[ "$CURPOS1" != "$CURPOS2" ] && MOUSECNT=0
+		
+		CURPOS1="$CURPOS2"
+		
+		if [ $MOUSECNT -ge $POWERTIMEOUT ]; then
+		
+		 if [ "$BOOT_MODE" == "systemd" ]; then
+		  exec systemctl poweroff 
+		 elif [ "$(pidof elogind elogind-daemon)" != "" ]; then
+		  exec loginctl poweroff 0 
+		 else
+		  exec poweroff
+		 fi
+		
+		fi
+		
+	fi
+
+done
+

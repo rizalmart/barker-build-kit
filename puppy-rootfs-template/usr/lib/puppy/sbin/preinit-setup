@@ -1,0 +1,371 @@
+#!/bin/sh
+
+exec 2>/dev/null
+
+export LANG=C
+
+export HOME="/root"
+
+export PATH="/usr/lib/puppy/bin:/usr/lib/puppy/sbin:/usr/bin/overrides:/usr/sbin/overrides:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin/32:/usr/sbin/32:/usr/games:/root/my-applications/bin"
+
+#if [ "$LD_LIBRARY_PATH" == "" ]; then
+
+	LD_LIBRARY_PATH32="/lib32:/usr/lib32:/usr/local/lib32:/libx32:/usr/libx32:/usr/local/libx32:/lib/i386-linux-gnu:/usr/lib/i386-linux-gnu:/usr/local/lib/i386-linux-gnu:/lib:/usr/lib:/usr/local/lib:/root/my-applications/lib"
+	LD_LIBRARY_PATH64="/lib64:/usr/lib64:/usr/local/lib64:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/usr/local/lib/x86_64-linux-gnu:/lib:/usr/lib:/usr/local/lib:/root/my-applications/lib"
+	LD_LIBRARY_PATH64_COMPAT="/lib32:/usr/lib32:/usr/local/lib32:/libx32:/usr/libx32:/usr/local/libx32:/lib/i386-linux-gnu:/usr/lib/i386-linux-gnu:/usr/local/lib/i386-linux-gnu"
+		
+	if [ -e /lib64/libc.so.6 ] || [ -e /lib/x86_64-linux-gnu/libc.so.6 ]; then #slackware64
+		LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
+	elif [ -e /libx32/libc.so.6 ] || [ -e /lib32/libc.so.6 ] || [ -e /lib/i386-linux-gnu/libc.so.6 ]; then #32-bit
+		LD_LIBRARY_PATH="${LD_LIBRARY_PATH32}"
+	else
+	  if [ "$(uname -m | grep "64")" != "" ]; then
+	   LD_LIBRARY_PATH="${LD_LIBRARY_PATH64}:${LD_LIBRARY_PATH64_COMPAT}"
+	  else
+	   LD_LIBRARY_PATH="${LD_LIBRARY_PATH32}"
+	  fi
+	fi
+	
+	LD_LIBRARY_PATH="/lib/overrides:${LD_LIBRARY_PATH}"
+	
+	export LD_LIBRARY_PATH
+
+#fi
+
+KERNVER="$(uname -r)"
+
+export INITRD_FLD="/initrd"
+
+[ -L /initrd ] && export INITRD_FLD=$(readlink /initrd 2>/dev/null)
+
+
+depmod_func() { #then run depmod to overwrite any depmod files on OLD layer...
+  echo "Executing depmod, to update module files..."
+  depmod -a
+}
+
+basic_update() {
+	
+	DFLDCOUNT="$(find $INITRD_FLD -type d -name "applications" -maxdepth 6 2>/dev/null | grep "/share/applications" | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+
+	for fld2 in $SHAREPATH
+	do
+	  
+	  if [ -d $fld2/icons ]; then
+	     
+		find $fld2/icons -maxdepth 1 -mindepth 1 -type d | \
+		while read dir ; do
+							
+			[ -h "$dir" ] && continue
+			[ -d "$dir"/cursors ] && continue # in case 3rd party cursors installed
+			
+			GTK_UPDATE_ICON=""
+			
+			HILOCOLOR="$(basename $dir | grep -E "hicolor|locolor")"			
+			
+			if [ -f "$dir"/index.theme ] && [ "$HILOCOLOR" != "" ]; then
+			   GTK_UPDATE_ICON="y"
+			elif [ -f "$dir"/index.theme ] && [ ! -f "$dir"/icon-theme.cache ]; then 
+			   GTK_UPDATE_ICON="y"
+			fi
+			
+			if [ "$GTK_UPDATE_ICON" != "" ]; then
+				for gtkcmd in gtk4 gtk
+				do
+				  if [ -e /usr/bin/${gtkcmd}-update-icon-cache ] ; then
+				    echo "Updating icon cache at $dir ..." >/dev/console
+				    [ "$HILOCOLOR" != "" ] && rm -f "$dir"/icon-theme.cache
+					${gtkcmd}-update-icon-cache -f -i "$dir"
+					break
+				  fi
+				done
+			fi
+			
+	   done
+	   
+	  fi
+	 
+	  if [ -d $fld2/applications ]; then
+
+		 DUPDATE=""
+
+		 if [ "$PUNIONFS" != "" ] && [ $DFLDCOUNT -gt 0 ]; then
+			DUPDATE="y"
+		 elif [ "$PUPMODE" == "w" ]; then
+		    DUPDATE="y"
+		 fi
+		 
+		 if [ "$DUPDATE" != "" ]; then
+			echo "Updating desktop database at $fld2/applications ..." >/dev/console
+			rm -f $fld2/applications/mimeinfo.cache 2>/dev/null
+			update-desktop-database $fld2/applications		 
+		 fi
+		 
+	  fi
+	  
+	done
+
+	if [ -e /usr/sbin/fixmenus ] && [ -e /usr/bin/jwm-xdgmenu -o -e /usr/bin/icewm-xdgmenu ] ; then
+		LANG=C fixmenus #Reconstruct configuration files for JWM, IceWM...
+	fi
+	
+	[ "$(which dconf)" != "" ] && dconf update 2>/dev/null
+
+}
+
+extended_update() {
+	
+	if [ "$PUNIONFS" != "" ]; then
+	
+		#these are normally done in 3builddistro.
+		LDCONFDCOUNT="$(find $INITRD_FLD -type d -name "ld.so.conf.d" -maxdepth 4 2>/dev/null | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+		
+		if [ $LDCONFCOUNT -gt 0 ]; then
+		  echo "Running ldconfig ..." >/dev/console
+		  ldconfig 2>/dev/null
+		fi
+		
+		GCONVFLDCOUNT="$(find $INITRD_FLD -type d -name "gconv" -maxdepth 7 2>/dev/null | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+
+		if [ $GCONVFLDCOUNT -gt 0 ]; then
+		 echo "Running iconvconfig ..." >/dev/console
+		 iconvconfig 2>/dev/null # creates /usr/lib/gconv/gconv-modules.cache
+		fi
+		
+		FONTFLDCOUNT="$(find $INITRD_FLD -type d -name "fonts" -maxdepth 6 2>/dev/null | grep "/share/fonts" | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+		
+		if [ $FONTFLDCOUNT -gt 0 ]; then
+		  echo "Running fontconfig ..." >/dev/console
+		  fc-cache -f 2>/dev/null # some sfs files may have fonts
+	    fi
+	    
+	elif [ "$PUPMODE" == "w" ]; then
+	  echo "Running ldconfig ..." >/dev/console
+	  ldconfig 2>/dev/null
+	  echo "Running iconvconfig ..." >/dev/console
+	  iconvconfig 2>/dev/null
+	  echo "Running fontconfig ..." >/dev/console
+	  fc-cache -f 2>/dev/null
+	fi
+	
+	MIMEFLDCOUNT="$(find $INITRD_FLD -type d -name "mime" -maxdepth 6 2>/dev/null | grep "/share/mime" | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+	
+	for fld2 in $SHAREPATH
+	do
+	 if [ -d $fld2 ]; then
+
+	   if [ -d $fld2/mime ]; then
+		 if [ "$(echo "$fld2/mime" | grep "share/mime")" != "" ] && [ "$PUNIONFS" != "" ]; then
+		   if [ $MIMEFLDCOUNT -gt 0 ]; then
+		     echo "Updating mime cache at $fld2/mime ..." >/dev/console
+		     update-mime-database $fld2/mime		   
+		   fi
+		 else
+		   echo "Updating mime cache at $fld2/mime ..." >/dev/console
+		   update-mime-database $fld2/mime 2>/dev/null
+		 fi
+	   fi
+
+	   if [ -d $fld2/glib-2.0/schemas ]; then
+	    echo "Compiling glib schema at $fld2/glib-2.0/schemas ..." >/dev/console
+	    glib-compile-schemas $fld2/glib-2.0/schemas 2>/dev/null
+	   fi
+		
+	  fi
+	done
+
+
+	for fld2 in $LIBDIRS
+	do
+	 if [ -d $fld2 ]; then
+	  if [ -d $fld2/gio/modules ]; then
+	   echo "Updating gio modules at $fld2/gio/modules ..." >/dev/console
+	   gio-querymodules $fld2/gio/modules 2>/dev/null
+	  fi
+	 fi
+	done
+
+	echo "Updating gtk im moduless ..." >/dev/console
+
+    for gtkver in 6.0 5.0 4.0 3.0 2.0
+    do
+	 if [ -e /usr/bin/update-gtk-immodules-${gtkver} ] ; then
+		update-gtk-immodules-${gtkver}
+	 elif [ -e /usr/bin/gtk-query-immodules-${gtkver} ] ; then
+		gtk-query-immodules-${gtkver} --update-cache
+	 elif [ -e /usr/bin/gtk-query-immodules-${gtkver}-64 ] ; then
+		gtk-query-immodules-${gtkver}-64 --update-cache	2>/dev/null
+	 fi
+	done
+
+}
+
+update_cache_files() {
+	
+	basic_update
+	extended_update
+		
+	KMODFLDCOUNT="$(find $INITRD_FLD -type d -name $KERNVER -maxdepth 6 2>/dev/null | grep "/lib/modules" | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+	
+	RUNDEPMOD=""
+	
+	if [ "$PUNIONFS" != "" ] && [ $KMODFLDCOUNT -gt 1 ]; then
+		RUNDEPMOD="y"
+	elif [ "$PUPMODE" == "w" ]; then
+		RUNDEPMOD="y"
+	fi
+	
+	if [ "$RUNDEPMOD" != "" ]; then
+	   echo "running depmod ..." >/dev/console
+	   depmod_func -a 2>/dev/null
+	fi
+	
+	
+	HWDBFLDCOUNT="$(find $INITRD_FLD -type d -name "hwdb.d" -maxdepth 7 2>/dev/null | grep "/udev/" | grep -vE "pup_disk|pup_rw|pup_ro1\/|pup_ro2\/|pup_loop|\/mnt\/" | wc -l)"
+	
+	# some sfs may have udev hardware database
+	if [ "$(udevadm --help 2>&1 | grep hwdb)" != "" ]; then
+	
+	 RUNHWDB=""
+	
+	 if [ "$PUNIONFS" != "" ] && [ $HWDBFLDCOUNT -gt 0 ]; then
+	   RUNHWDB="y"
+	 elif [ "$PUPMODE" == "w" ]; then
+	   RUNHWDB="y"	 	    
+	 fi
+	 
+	 if [ "$RUNHWDB" != "" ]; then
+	   echo "updating udev hardware database ..." >/dev/console
+	   udevadm hwdb --update
+	 fi
+	
+	fi
+	
+	if [ "$(pidof udevd systemd-udevd)" != "" ]; then 
+		udevadm control --reload-rules
+		udevadm trigger
+	fi	
+	 
+}
+
+[ -f /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+[ "$PUPMODE" == "" ] && PUPMODE=2
+
+echo "Basic cleanup..."
+
+rm -rf /run/systemd/* 2>/dev/null
+rm -rf /run/udev/* 2>/dev/null
+
+find /run -type f -name "*.pid" -maxdepth 2 | xargs -i rm -f {} 2>/dev/null
+find /var/run -type f -name "*.pid" | xargs -i rm -f {} 2>/dev/null
+
+echo "Decluttering mountpoints..."
+
+MOUNTLIST=$(mount)
+
+# Setup /mnt/home symlink before sfs_load
+[ "$(echo $MOUNTLIST | grep -m 1 "/mnt/home")" == "" ] && rm -f /mnt/home 2>/dev/null
+
+for mntfld1 in /mnt /media
+do
+
+	ls -A1 $mntfld1 | grep "+" | while read line; do
+	
+		linex="$(echo $line | sed -e 's#\-#\\\-#g')"
+		
+		if [ "$(echo $MOUNTLIST | grep -m 1 "$mntfld1/$linex")" == "" ]; then
+		  rmdir $mntfld1/$line
+		fi
+		
+	done
+
+done
+
+echo "Performing rootfs adjustments..."
+
+/usr/lib/puppy/etc/core-scripts/rc.update $PUPMODE
+
+if [ $PUPMODE -eq 2 -o $PUPMODE -eq 77 ] ; then
+
+ PUP_HOME='/'
+
+ ln -s / /mnt/home
+
+else
+ 
+ if [ "$PUP_HOME" ]; then #see /etc/rc.d/PUPSTATE
+   [ ! -d "$INITRD_FLD${PUP_HOME}" ] && echo "ERROR: $PUP_HOME does not exist"
+   ln -s $INITRD_FLD${PUP_HOME} /mnt/home
+ fi
+ 
+fi
+
+#------ load extra sfs's if any ------
+[ "$PUNIONFS" == "aufs"  ] && sfs_load --cli start
+[ "$PUNIONFS" == "overlay"  ] && sfs_load_overlay --cli start
+#-------------------------------------
+
+# if aufs layers have changed, may need to fix menu (etc)...
+if [ "$PUNIONFS" == "aufs" ] || [ "$PUNIONFS" == "overlay" ];then
+
+	echo -e "\nUpdating rootfs layer..."
+
+	refresh-rootfs-layer
+		
+	if [ -e /etc/rc.d/BOOTCONFIG ]; then
+
+	 . /etc/rc.d/BOOTCONFIG
+	 
+	 # multisession-cd, different folder at each startup, so screen out...
+	 xLASTUNIONRECORD="`echo -n "$LASTUNIONRECORD" | sed -e 's/^20[0-9][0-9][-0123456789]* //'`"
+	 xPREVUNIONRECORD="`echo -n "$PREVUNIONRECORD" | sed -e 's/^20[0-9][0-9][-0123456789]* //'`"
+		#-
+		
+		if [ "$xLASTUNIONRECORD" != "$xPREVUNIONRECORD" ];then
+			
+			echo -e "Layered-filesystem \\033[1;35mnext boot will be faster!\\033[0;39m"
+			echo "Layers have changed since previous boot, updating menus..."
+			
+			update_cache_files
+
+		fi
+	   
+	fi
+	
+    if [ -f /usr/lib/systemd/system/sysinit.target.wants/ldconfig.service ]; then
+		rm -f /usr/lib/systemd/system/sysinit.target.wants/ldconfig.service
+    fi
+	
+fi
+
+
+if [ "$(which systemctl)" != "" ]; then
+
+	if [ -f /var/hwdata/pci-devices.lst ]; then
+	   
+	   FILEPCIHASH="$(cat /var/hwdata/pci-devices.lst | md5sum)"
+	   
+	   CURRPCIHASH="$(busybox lspci | md5sum)"
+	   
+	   if [ "$FILEPCIHASH" != "$CURRPCIHASH" ]; then
+		 systemctl enable mhwd-live mhwd-live-net 2>/dev/null
+	   else
+		 systemctl disable mhwd-live mhwd-live-net 2>/dev/null
+	   fi
+	   
+	fi
+
+
+	if [ $PUPMODE -ne 5 ]; then
+		if [ "$(which systemctl)" != "" ]; then
+		
+		  for srv1 in NetworkManager-wait-online systemd-timesyncd manjaro-live
+		  do
+			systemctl disable $srv1 
+		  done
+			  
+		fi  
+	fi
+
+fi

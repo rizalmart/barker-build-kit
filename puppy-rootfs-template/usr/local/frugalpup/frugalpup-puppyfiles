@@ -1,0 +1,543 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+do_exit() {
+	[ -e "$TMP_LIST" ] && rm "$TMP_LIST"
+	[ -e "$TMP_BLK" ] && rm "$TMP_BLK"
+	if [ -e "$MNTD_FN" ]; then
+		while IFS='' read ONE_MP; do
+			umount "$ONE_MP" 2>/dev/null
+		done < "$MNTD_FN"
+		rm -f "$MNTD_FN"
+	fi
+	[ "$XPID" ] && kill -9 $XPID 2>/dev/null
+	if [ "$1" ]; then
+		yad $YAD_STD_OPTS --title "${Tt}" --width=400 --text-align=center \
+			--text "${MuBig}${1}${MuBe}" \
+			--button=${TbOk}!gtk-ok:0
+	fi
+	exit $2
+}
+
+error_exit() {
+	do_exit "$1" 1
+}
+
+normal_exit() {
+	do_exit "$1" 0
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+Tt="${TnFrugal}-$(gettext 'puppyfiles') ${TnVer}"
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext 'File %s not found')" "${MuPurple}${UTILS_DIR}/functions_part${MuEnd}")"
+. "$UTILS_DIR/functions_part"
+
+MNTD_FN="/tmp/frugalpup_$$_did_mount.txt"
+[ -f "$MNTD_FN" ] && rm -f "$MNTD_FN"
+
+SFS_PART=''; SFS_DIR=''; SFS_LABEL=''
+[ "$CACHE_FN" ] && [ -f "$CACHE_FN" ] && . "$CACHE_FN"
+
+TMP_BLK="/tmp/${myName}_$$_blk_list.txt"
+busybox blkid | grep -v 'squashfs' | grep -v 'swap' | grep -v 'zram' | sort > "$TMP_BLK"
+
+SRC_TYPE='';SRC_DIR=''; SRC_FN=''
+
+Tm0="$(gettext 'Source type')"
+Tm1="$(gettext 'Select one of the following source types:')"
+Tm2="$(gettext "A .iso file")"
+Tm3="$(gettext "A .zip file")"
+Tm4="$(gettext 'A local directory')"
+Tm5="$(gettext 'This Puppy')"
+SRC_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=170 \
+	--text "${Tm1}" \
+	--list --no-headers --print-column=2 --radiolist --column=:RD --column=:TXT --column=:TXT \
+	TRUE 'iso' " ${Tm2}" FALSE 'zip' " ${Tm3}" FALSE 'directory' " ${Tm4}" FALSE 'this' " ${Tm5}" \
+	--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+[ $? -eq 0 ] || error_exit
+SRC_TYPE="${SRC_SPEC%|}"
+
+if [ "$SRC_TYPE" = "this" ]; then
+	. /etc/rc.d/PUPSTATE
+	#mainly to catch unplugged usb devices, but doing it for all
+	for ONE_PARM in $(head -n1 /proc/cmdline); do
+		case $ONE_PARM in
+			psfspart=*) PSFSID="${ONE_PARM#*=}"; break ;;
+			pdrv=*) PSFSID="${ONE_PARM#*=}"; break ;;
+			pupsfs=*) PSFSID="${ONE_PARM#*=}"; break ;;
+			pdev1=*) PSFSID="${ONE_PARM#*=}"; break ;;
+		esac
+	done
+	if [ "$PSFSID" ]; then
+		ID_PART="$(grep "=\"${PSFSID}\"" "$TMP_BLK" | cut -f1 -d':')"
+		[ "$ID_PART" ] || error_exit "$(gettext 'Puppy install partition is not available')
+$(gettext 'Probably due to unplugged usb boot device')"
+		SRC_PART="${ID_PART#/dev/}"
+	else
+		SRC_PART="${PUPSFS%%,*}"
+	fi
+	ensure_mounted "$SRC_PART"
+	[ "$ensure_mounted_DID" ] && echo "$ensure_mounted_MP" >> "$MNTD_FN"
+	[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SRC_PART\""
+	SRC_MP="$ensure_mounted_MP"
+	SFS_FN="${SRC_MP}${PUPSFS##*,}"
+	if [ -f "$SFS_FN" ]; then
+		SRC_DIR="${SFS_FN%/*}"
+		SRC_TYPE='directory'
+	else
+		error_exit "$(printf "$(gettext "Puppy file \"%s\" not found")" "$SFS_FN")"
+	fi
+elif [ "$SRC_TYPE" = "directory" ]; then
+	Tm0="$(gettext 'Source directory')"
+	Tm1="$(gettext 'Select the directory containing Puppy files.')"
+	SRC_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--file --directory --width=600 --height=460 \
+		--text " ${Tm1}" \
+		--filename="/mnt/" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	SFS_FN="$(find "$SRC_DIR" -maxdepth 1 -type f -name 'puppy_*.sfs')"
+	[ "$SFS_FN" ] || error_exit "$(gettext 'No Puppy files found in') \"$SRC_DIR\""
+else
+	Tm0="$(gettext 'Source file')"
+	Tm1="$(printf "$(gettext 'Select the %s file containing Puppy files.')" "$SRC_TYPE")"
+	SRC_FN="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--file --file-filter "$SRC_TYPE files | *.$SRC_TYPE" --width=600 --height=460 \
+		--text " ${Tm1}" \
+		--filename="$HOME/" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	[ -d "$SRC_FN" ] && error_exit "$(printf "$(gettext 'No %s file selected')" "$SRC_TYPE")"
+fi
+
+TMP_LIST="/tmp/${myName}_$$_tmp_list.txt"
+[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+while read ONE_LINE; do
+	TYPE="${ONE_LINE#*TYPE=\"}"
+	[ "${TYPE:0:1}" = "/" ] && TYPE='' || TYPE="${TYPE%%\"*}"
+	[ "$TYPE" = "crypto_LUKS" ] && continue
+	get_part_fs_class "$TYPE"
+	[ "$get_part_fs_class_RET" = "cd" ] && continue
+	DRV="${ONE_LINE%%:*}"; DRV="${DRV#/dev/}"
+	LAB="${ONE_LINE#*LABEL=\"}"
+	[ "${LAB:0:1}" = "/" ] && LAB='' || LAB="${LAB%%\"*}"
+	[ "$LAB" = "System Reserved" ] && continue
+	[ "$LAB" = "" -a "$TYPE" = "ntfs" ] && continue
+	echo "$DRV" >> "$TMP_LIST"
+	if [ "$TYPE" = 'vfat' ]; then
+		echo "fat32" >> "$TMP_LIST"
+	else
+		echo "$TYPE" >> "$TMP_LIST"
+	fi
+	echo "$LAB" >> "$TMP_LIST"
+done < "$TMP_BLK"
+
+if [ -s "$TMP_LIST" ]; then
+	if [ "$SFS_PART" ]; then
+		Tm1="${MuPurple}${SFS_PART}${MuEnd} $(gettext 'is the default partition to contain Puppy.')"
+		Tm2="$(gettext 'Simply click %s to use it,\nOr\nselect another partition to contain Puppy:')"
+		Tm3="$(printf "${Tm2}" "${MuBlue}${TbOk}${MuEnd}")"
+		TMSG="${Tm1}
+${Tm3}"
+		THT=280
+	else
+		TMSG="$(gettext 'Please select a partition to contain Puppy:')"
+		THT=240
+	fi
+	Tm0="$(gettext 'Destination partition')"
+	DEST_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=$THT \
+		--text "   $TMSG   " \
+		--list --column=Partition --column=FileSystem --column=Label < $TMP_LIST \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	rm "$TMP_LIST"
+	if [ "$DEST_SPEC" ]; then
+		DEST_PART="${DEST_SPEC%%|*}"
+	elif [ "$SFS_PART" ]; then
+		DEST_PART="$SFS_PART"
+	else
+		error_exit "$(gettext 'No partition selected')"
+	fi
+else
+	error_exit "$(gettext 'No suitable partitions found')"
+fi
+
+ensure_mounted "$DEST_PART"
+[ "$ensure_mounted_DID" ] && echo "$ensure_mounted_MP" >> "$MNTD_FN"
+[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$DEST_PART\""
+DEST_MP="$ensure_mounted_MP"
+
+get_part_id "$DEST_PART"
+DEST_ID="$get_part_id_RET"
+
+Tm0="$(gettext 'Puppy directory')"
+Tm1="$(printf "$(gettext '%s is mounted at %s.')" "${MuPurple}${DEST_PART}${MuEnd}" "${MuPurple}${DEST_MP}${MuEnd}")"
+Tm2="$(gettext 'Select a directory to contain the Puppy frugal install files.')"
+Tm3="$(gettext 'Create Folder')"
+Tm4="$(printf "$(gettext 'Note:') $(gettext 'If you use the %s button,')" "${MuBlue}${Tm3}${MuEnd}")"
+Tm5="$(gettext 'Enter')"
+Tm6="$(printf "$(gettext 'you need to hit the %s key after typing the new folder name.')" "${MuPurple}${Tm5}${MuEnd}")"
+DEST_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+	--file --directory --width=600 --height=500 \
+	--text " ${Tm1}
+
+ ${Tm2}
+
+ ${Tm4}
+ ${Tm6}
+" \
+	--filename="${DEST_MP}${SFS_DIR%/*}/" \
+	--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+[ $? -eq 0 ] || error_exit
+
+DIR_MP="$(stat -Lc %m "$DEST_DIR")"
+if [ "$DIR_MP" != "$DEST_MP" ]; then
+	DEST_PART="$(grep -m1 "$DIR_MP" /proc/mounts | cut -f1 -d' ')"
+	DEST_PART="${DEST_PART#/dev/}"
+	DEST_MP="$DIR_MP"
+fi
+SFS_DIR="${DEST_DIR#${DEST_MP}}"
+
+if [ "$SRC_TYPE" = "directory" ]; then
+	#check that DEST_DIR is not the same as SRC_DIR
+	[ "$(realpath "$DEST_DIR")" = "$(realpath "$SRC_DIR")" ] && error_exit "$(gettext 'Source directory:')
+  ${MuPurple}${SRC_DIR}${MuEnd}
+$(gettext 'Destination directory:')
+  ${MuPurple}${DEST_DIR}${MuEnd}
+$(gettext 'These are the same directory')"
+fi
+
+[ -f "$CONFIG_FN" ] && . "$CONFIG_FN"
+
+SAVE_PART=''; SAVE_DIR=''
+PKNLPARMS=''; PFIXPARMS=''; PSAVEID=''; PSAVEMARK=''
+[ -f "$DEST_DIR/$PARMS_FN" ] && . "$DEST_DIR/$PARMS_FN"
+
+if [ "$PSAVEID" ]; then
+	SAVE_DEV="$(grep "$PSAVEID" "$TMP_BLK" | cut -d':' -f1)"
+	if [ "$SAVE_DEV" ]; then
+		SAVE_PART="${SAVE_DEV#/dev/}"
+		SAVE_DIR="$PSAVEDIR"
+		SAVE_ID="$PSAVEID"
+	fi
+elif [ "$PSAVEMARK" ]; then
+	SAVE_DEV="${DEST_PART%[0-9]}"; SAVE_DEV="${SAVE_DEV%[0-9]}"; SAVE_DEV="${SAVE_DEV%[0-9]}"
+	SAVE_PART="${SAVE_DEV}${PSAVEMARK}"
+	SAVE_DIR="$SFS_DIR"
+	SAVE_ID="$DEST_ID"
+fi
+
+if [ "$showSAVE" = "yes" ]; then
+	[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+	while read ONE_LINE; do
+		TYPE="${ONE_LINE#*TYPE=\"}"
+		[ "${TYPE:0:1}" = "/" ] && TYPE='' || TYPE="${TYPE%%\"*}"
+		get_part_fs_class "$TYPE"
+		[ "$get_part_fs_class_RET" = "linux" ] || continue
+		DRV="${ONE_LINE%%:*}"; DRV="${DRV#/dev/}"
+		LAB="${ONE_LINE#*LABEL=\"}"
+		[ "${LAB:0:1}" = "/" ] && LAB='' || LAB="${LAB%%\"*}"
+		echo "$DRV" >> "$TMP_LIST"
+		echo "$TYPE" >> "$TMP_LIST"
+		echo "$LAB" >> "$TMP_LIST"
+	done < "$TMP_BLK"
+
+	if [ -s "$TMP_LIST" ]; then
+		if [ "$SAVE_PART" ]; then
+			Tm1="$(gettext 'A separate save location is currently defined:')"
+			Tm2="$(printf "$(gettext 'To retain this definition, just click %s.')" "${MuBlue}${TbOk}${MuEnd}")"
+			TXT_INTRO="${Tm1}
+    ${MuPurple}${SAVE_PART}:${SAVE_DIR}${MuEnd}
+${Tm2}
+
+"
+		else
+			Tm1="$(gettext 'Defining a separate Linux save location is optional,\nto continue without one, just click %s.')"
+			Tm2="$(printf "${Tm1}" "${MuBlue}${TbOk}${MuEnd}")"
+			TXT_INTRO="${Tm2}
+
+"
+		fi
+		Tm0="$(gettext 'Save location')"
+		Tm1="$(gettext 'Current Puppies are capable of storing the savefolder separate from the install directory.')"
+		Tm2="$(gettext 'You might do this to install Puppy on an SSD but write the savefolder to a HD,')"
+		Tm3="$(gettext 'or\nto install Puppy on a non-Linux partition but use a savefolder on a Linux partition,')"
+		Tm4="$(gettext 'or\nsimply store the savefolder in a directory other than the install directory.')"
+		Tm5="$(gettext 'Select a Puppy save partition:')"
+		SAVE_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=360 \
+			--text "${TXT_INTRO}${Tm1}
+${Tm2}
+${Tm3}
+${Tm4}
+
+${Tm5}" \
+			--list --column=Partition --column=FileSystem --column=Label < $TMP_LIST \
+			--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		rm "$TMP_LIST"
+		if [ "$SAVE_SPEC" ]; then
+			SAVE_PART="${SAVE_SPEC%%|*}"
+			SAVE_SPEC="${SAVE_SPEC#*|}"; SAVE_SPEC="${SAVE_SPEC#*|}"
+			SAVE_LABEL="${SAVE_SPEC%%|*}"
+			SAVE_SPEC="${SAVE_SPEC#*|}"
+			SAVE_UUID="${SAVE_SPEC%%|*}"
+			if [ "$SAVE_LABEL" ]; then
+				SAVE_ID="$SAVE_LABEL"
+			else
+				SAVE_ID="$SAVE_UUID"
+			fi
+			if [ "$SAVE_PART" ]; then
+				ensure_mounted "$SAVE_PART"
+				[ "$ensure_mounted_DID" ] && echo "$ensure_mounted_MP" >> "$MNTD_FN"
+				[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SAVE_PART\""
+				SAVE_MP="$ensure_mounted_MP"
+
+				Tm0="$(gettext 'Save directory')"
+				Tm1="$(gettext 'Select the directory to contain the Puppy savefolder/savefile.')"
+				Tm2="$(gettext 'Warning:')"
+				Tm3="$(gettext 'If the same save directory is specified for multiple copies of the same Puppy,\nthey will all share a single savefolder/savefile.')"
+				Tm5="$(gettext 'Note:')"
+				Tm6="$(gettext 'In this context, a re-master is just another copy of the parent Puppy.')"
+				Tm7="$(gettext 'It is a safe practice to always specify a unique save directory for each frugal install.')"
+				SAVE_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+					--file --directory --width=670 --height=620 \
+					--text " ${Tm1}
+
+${MuRed}${Tm2}${MuEnd}
+${Tm3}
+${MuBlue}${Tm5}${MuEnd}
+${Tm6}
+
+${Tm7}" \
+					--filename="${SAVE_MP}${SAVE_DIR%/*}/" \
+					--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+				[ $? -eq 0 ] || error_exit
+				DIR_MP="$(stat -Lc %m "$SAVE_DIR")"
+				if [ "$DIR_MP" != "$SAVE_MP" ]; then
+					SAVE_PART="$(grep -m1 "$DIR_MP" /proc/mounts | cut -f1 -d' ')"
+					SAvE_PART="${SAVE_PART#/dev/}"
+					SAVE_MP="$DIR_MP"
+				fi
+				[ "$ensure_mounted_DID" ] && umount "$ensure_mounted_MP"
+				SAVE_DIR="${SAVE_DIR#${SAVE_MP}}"
+			fi
+		fi
+	fi
+fi
+
+#just in case
+if [ "$SAVE_PART" = "$DEST_PART" ]; then
+	if [ "$SAVE_DIR" = "$SFS_DIR" ]; then
+		SAVE_PART=''
+		SAVE_DIR=''
+	fi
+fi
+
+XTRA_PARMS=''
+if [ "$showKERNEL" = "yes" ]; then
+	DEF_PARMS="$frugalPARMS" 
+	if [ "$DEF_PARMS" ]; then
+		TMP_DIR="/tmp/${myName}_$$_tmp"
+		[ -d "$TMP_DIR" ] && rm -rf "$TMP_DIR"
+		mkdir -p "$TMP_DIR"
+		[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+		for ONE_PARM in $PKNLPARMS; do
+			touch "$TMP_DIR/${ONE_PARM%=*}"
+			echo 'TRUE' >> "$TMP_LIST"
+			echo "$ONE_PARM" >> "$TMP_LIST"
+		done
+		for ONE_PARM in $DEF_PARMS; do
+			[ -f "$TMP_DIR/${ONE_PARM%=*}" ] && continue
+			echo 'FALSE' >> "$TMP_LIST"
+			echo "$ONE_PARM" >> "$TMP_LIST"
+		done
+		[ -d "$TMP_DIR" ] && rm -rf "$TMP_DIR"
+
+		Tm0="$(gettext 'Kernel boot parameters')"
+		Tm1="$(gettext 'There are many boot parameters defined for the Linux kernel.')"
+		Tm2="$(gettext 'The selection below is a very small sub-set of those.')"
+		Tm4="$(printf "$(gettext 'The %s facility provides:')" "${MuPurple}${TnSet}${MuEnd}")"
+		Tm5="$(gettext 'an option to change which kernel boot parmeters appear below,\nand a reference to documentation of available kernel boot parameters.')"
+		Tm7="$(printf "$(gettext 'If you are not sure, accept the default, and click the %s button.')" "${MuBlue}${TbOk}${MuEnd}")"
+		Tm8="$(gettext 'Otherwise, check the boxes of the desired kernel boot parameters.')"
+		Tm9="$(gettext 'Grub2')"
+		Tm10="$(gettext 'Selected boot parameters are inserted into the %s boot-entry\ngenerated by the %s and %s facilities.')"
+		Tm11="$(printf "${Tm10}" "${MuPurple}${Tm9}${MuEnd}" "${MuPurple}${TbBoot}${MuEnd}" "${MuPurple}${TbCd}${MuEnd}")"
+		PARM_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=350 \
+		--text "${Tm1}
+${Tm2}
+
+${Tm4}
+${Tm5}
+
+${Tm7}
+${Tm8}
+
+${Tm11}" \
+	--list --no-headers --checklist --print-column=2 --column=:CHK --column=:TXT < "$TMP_LIST" \
+	--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		XTRA_PARMS="${PARM_SPEC%|}"
+		XTRA_PARMS="${XTRA_PARMS//|
+/ }"
+	fi
+else
+	XTRA_PARMS="$PKNLPARMS"
+fi
+
+PFIX_PARMS=''
+if [ "$showPFIX" = "yes" ]; then
+	NOX_VAL='FALSE'; NOCOPY_VAL='FALSE'; FSCK_VAL='FALSE'; FSCKP_VAL='FALSE'; TRIM_VAL='FALSE'
+	if [ "$PFIXPARMS" ]; then
+		IFS_BAK=$IFS; IFS=','
+		for ONE_PARM in $PFIXPARMS; do
+			case $ONE_PARM in
+				nox) NOX_VAL='TRUE' ;;
+				nocopy) NOCOPY_VAL='TRUE' ;;
+				fsck) FSCK_VAL='TRUE' ;;
+				fsckp) FSCKP_VAL='TRUE' ;;
+				trim) TRIM_VAL='TRUE' ;;
+			esac
+		done
+		IFS=$IFS_BAK
+	fi
+
+	Tm0="$(gettext 'Pfix boot parameter')"
+	Tm1="$(gettext 'pfix')"
+	Tm4="$(printf "$(gettext 'Manually override the %s boot parameter generated by the %s and %s facilities.')" "${MuPurple}${Tm1}${MuEnd}" "${MuPurple}${TbBoot}${MuEnd}" "${MuPurple}${TbCd}${MuEnd}")"
+	Tm5="$(printf "$(gettext 'A checked box indicates that the option will be included in the %s parameter.')" "${MuPurple}${Tm1}${MuEnd}")"
+	Tm6="$(gettext 'nox - do not start X')"
+	Tm7="$(gettext "nocopy - don't copy sfs's to RAM")"
+	Tm8="$(gettext 'fsck - fsck any savefile before mount')"
+	Tm9="$(gettext 'fsckp - fsck ext partitions before fist mount')"
+	Tm10="$(gettext "trim - add \"discard\" to mount command, if SSD")"
+	VALS="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --form \
+		--text="${Tm4}
+
+${Tm5}" \
+		--field="${Tm6}:CHK" $NOX_VAL \
+		--field="${Tm7}:CHK" $NOCOPY_VAL \
+		--field="${Tm8}:CHK" $FSCK_VAL \
+		--field="${Tm9}:CHK" $FSCKP_VAL \
+		--field="${Tm10}:CHK" $TRIM_VAL \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	[ "$VALS" ] || error_exit "$(gettext 'No values specified')"
+	[ "${VALS%%|*}" = "TRUE" ] && PFIX_PARMS="${PFIX_PARMS},nox"
+	VALS="${VALS#*|}"
+	[ "${VALS%%|*}" = "TRUE" ] && PFIX_PARMS="${PFIX_PARMS},nocopy"
+	VALS="${VALS#*|}"
+	[ "${VALS%%|*}" = "TRUE" ] && PFIX_PARMS="${PFIX_PARMS},fsck"
+	VALS="${VALS#*|}"
+	[ "${VALS%%|*}" = "TRUE" ] && PFIX_PARMS="${PFIX_PARMS},fsckp"
+	VALS="${VALS#*|}"
+	[ "${VALS%%|*}" = "TRUE" ] && PFIX_PARMS="${PFIX_PARMS},trim"
+	PFIX_PARMS="${PFIX_PARMS#,}"
+else
+	PFIX_PARMS="$PFIXPARMS"
+fi
+
+DO_AUTOSAVE=''
+if [ "$doAUTO" = "yes" ]; then
+	if [ "$SAVE_PART" ]; then
+		get_part_fs "$SAVE_PART"
+	else
+		get_part_fs "$DEST_PART"
+	fi
+	if [ "$get_part_fs_RET" = 'vfat' ]; then
+		DO_AUTOSAVE='yes'
+	else
+		get_part_fs_class "$get_part_fs_RET"
+		[ "$get_part_fs_class_RET" = 'linux' ] && DO_AUTOSAVE='yes'
+	fi
+fi
+
+SAVE_MSG=''
+if [ "$SAVE_PART" ]; then
+	if [ "$SAVE_DIR" ]; then
+		SAVE_DIR_DISP="$SAVE_DIR"
+	else
+		SAVE_DIR_DISP='/'
+	fi
+	SAVE_MSG="
+
+$(gettext 'Default save location:')
+    $(gettext 'Partition:') ${MuPurple}$SAVE_PART${MuEnd} [${MuPurple}$SAVE_ID${MuEnd}]
+    $(gettext 'Directory:') ${MuPurple}$SAVE_DIR_DISP${MuEnd}"
+fi
+
+if [ "$XTRA_PARMS" ]; then
+	DISP_PARMS="
+
+$(gettext 'Extra kernel parameters:')
+    ${MuPurple}$XTRA_PARMS${MuEnd}"
+else
+	DISP_PARMS=''
+fi
+
+if [ "$PFIX_PARMS" ]; then
+	DISP_PFIX="
+
+$(gettext 'Pfix boot parameter:')
+    ${MuPurple}pfix=${PFIX_PARMS}${MuEnd}"
+else
+	DISP_PFIX=''
+fi
+
+DEST_DIR_DISP="$SFS_DIR"
+[ "$DEST_DIR_DISP" ] || DEST_DIR_DISP='/'
+
+if [ "$SRC_FN" ]; then
+	SRC_DISP="$SRC_FN"
+else
+	SRC_DISP="$(realpath "$SRC_DIR")"
+fi
+
+Tm0="$(gettext 'confirm')"
+Tm1="$(gettext 'About to write Puppy frugal install files to:')"
+Tm2="$(gettext 'Partition:')"
+Tm3="$(gettext 'Directory:')"
+Tm4="$(gettext 'Puppy source:')"
+Tm5="$(printf "$(gettext 'Click %s to continue.')" "${MuBlue}${TbOk}${MuEnd}")"
+yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+	--text "${Tm1}
+    ${Tm2} ${MuPurple}${DEST_PART}${MuEnd} [${MuPurple}${DEST_ID}${MuEnd}]
+    ${Tm3} ${MuPurple}${DEST_DIR_DISP}${MuEnd}
+
+${Tm4}
+    ${MuPurple}${SRC_DISP}${MuEnd}${SAVE_MSG}${DISP_PARMS}${DISP_PFIX}
+
+${Tm5}" \
+	--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0
+[ $? -eq 0 ] || error_exit
+
+echo "SRC_TYPE='$SRC_TYPE'" > "$CACHE_FN"
+echo "SRC_FN='$SRC_FN'" >> "$CACHE_FN"
+echo "SRC_DIR='$SRC_DIR'" >> "$CACHE_FN"
+echo "SFS_PART='$DEST_PART'" >> "$CACHE_FN"
+echo "SFS_DIR='$SFS_DIR'" >> "$CACHE_FN"
+echo "SAVE_PART='$SAVE_PART'" >> "$CACHE_FN"
+echo "SAVE_DIR='$SAVE_DIR'" >> "$CACHE_FN"
+echo "XTRA_PARMS='$XTRA_PARMS'" >> "$CACHE_FN"
+echo "PFIX_PARMS='$PFIX_PARMS'" >> "$CACHE_FN"
+[ "$DO_AUTOSAVE" = 'yes' ] && echo "AUTOSAVE='yes'" >> "$CACHE_FN"
+ERR_MSG="$("$EXE_DIR/frugalpup-dopupdir")"
+[ $? -eq 0 ] || error_exit "frugalpup-dopupdir: $ERR_MSG"
+
+if [ "$SFS_DIR" ]; then
+	EX_DEST="$DEST_PART:$SFS_DIR"
+else
+	EX_DEST="$DEST_PART"
+fi
+normal_exit "$(gettext 'Puppy Linux written to') ${MuPurple}${EX_DEST}${MuEnd}"
+
+exit

@@ -1,0 +1,40 @@
+#!/bin/ash
+#(c) Copyright 2008 Barry Kauler puppylinux.com
+#2008 Lesser GPL licence v2 (http://www.fsf.org/licensing/licenses/lgpl.html)
+#called via udev rule /etc/udev/rules.d/50-udev-puppy-basic.rules
+#i pulled this code out of /sbin/pup_event_backend_d, see 4.1alpha3.
+#all of the uevent variables (exs: MODALIAS, SUBSYSTEM) are available here.
+#NOTICE: If the full 'udev' package, with utility 'udevd' is installed, rc.sysinit
+#   will run 'udevd' instead of 'pup_event_backend_d' and this script will be used.
+#v409 bugfix, FIRMWARE may have form 'subdir/firmware-file'.
+#w004 LANG=C, faster. /bin/ash, even faster.
+
+export LANG=C #w004
+
+baseFIRMWARE="$(basename $1)"
+SYSPATH="$2"
+
+[ "$baseFIRMWARE" == "" ] && baseFIRMWARE="`basename $FIRMWARE`" #v409
+
+if [ "$SYSPATH" == "" ]; then
+  SYSPATH=/sys${DEVPATH}
+else
+  SYSPATH=/sys${SYSPATH}
+fi
+
+
+if [ "$baseFIRMWARE" != "" ] && [ "$SYSPATH" != "" ] && [ "$SYSPATH" != "/sys" ]; then
+
+	fndFIRMWARE="`find /lib/firmware -type f -name "${baseFIRMWARE}" -print -quit`"
+
+	if [ "$fndFIRMWARE" != "" ];then
+	 echo 1 > ${SYSPATH}/loading
+	 cat "$fndFIRMWARE" > ${SYSPATH}/data
+	 echo 0 > ${SYSPATH}/loading
+	else
+	 echo -1 > ${SYSPATH}/loading
+	fi
+
+fi
+
+###END###

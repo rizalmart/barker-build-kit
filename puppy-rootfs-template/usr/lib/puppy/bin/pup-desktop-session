@@ -1,0 +1,35 @@
+#!/bin/bash
+
+DM_LIST="$(cat /etc/display-managers.list 2>/dev/null | tr '\n' ' ')"
+
+if [ "$DM_LIST" != "" ] && [ "$(pidof $DM_LIST)" != "" ]; then
+/usr/lib/gtkdialog/box_ok "Puppy Graphical Session" error "Not applicable when display manager was running"
+exit
+fi
+
+WM_PATH=/etc/windowmanager
+WMC_PATH=/etc/wayland-compositor
+
+[ -f $HOME/.config/windowmanager ] && WM_PATH=$HOME/.config/windowmanager
+[ -f $HOME/.config/wayland-compositor ] && WMC_PATH=$HOME/.config/wayland-compositor
+
+WM=$(cat $WM_PATH 2>/dev/null)
+WMC=$(cat $WMC_PATH 2>/dev/null)
+
+RETVAL=$(yad --title="Puppy Graphical Session Settings" --fixed --width=400 \
+    --text "\nWARNING: Set to blank will disable graphical session\n" \
+    --button="gtk-ok:0" --button="gtk-cancel:1" \
+    --form --homogenous --field="X11 Desktop Environment" --field="Wayland Compositor/Desktop" \
+    "$WM" "$WMC")
+
+response=$?
+
+[ $response -ne 0 ] && exit $response
+
+X11_DESKTOP=$(echo $RETVAL | cut -f 1 -d '|')
+WL_DESKTOP=$(echo $RETVAL | cut -f 2 -d '|')
+
+echo $X11_DESKTOP > $HOME/.config/windowmanager
+echo $WL_DESKTOP > $HOME/.config/wayland-compositor
+
+/usr/lib/gtkdialog/box_ok "Puppy Graphical Session" info "Restart computer to apply changes"

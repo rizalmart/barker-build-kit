@@ -1,0 +1,53 @@
+# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))
+# and Bourne compatible shells (bash(1), ksh(1), ash(1), ...).
+
+export XDG_DATA_DIRS=/usr/lib/puppy/share:/usr/local/share:/usr/share
+export XDG_CONFIG_DIRS=/usr/lib/puppy/etc/xdg:/usr/local/etc/xdg:/usr/etc/xdg:/etc/xdg #v2.14 changed from /usr/etc
+
+PATH="/usr/lib/puppy/sbin:/usr/lib/puppy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/overrides:/usr/bin:/sbin:/bin"
+
+export PATH
+
+LANG=en_US.utf8
+export LANG
+
+[ "$LC_ALL" == "" ] && export LC_ALL=C.utf8
+[ "$LC_CTYPE" == "" ] && export LC_CTYPE=C.utf8
+[ "$LC_COLLATE" == "" ] && export LC_COLLATE=C.utf8
+
+
+if [ -d /etc/profile.d ]; then
+
+  for i in $(ls /etc/profile.d/*.sh 2>/dev/null | sort); do
+    . $i 
+  done
+  
+  unset i
+
+fi
+
+  
+# The file bash.bashrc already sets the default PS1.
+# PS1='\h:\w\$ '
+if [ -f /etc/bash.bashrc ]; then
+  . /etc/bash.bashrc
+else
+	if [ "$(id -u)" -eq 0 ]; then
+	  export PS1='\u@\h:\w # '
+	else
+	  export PS1='\u@\h:\w $ '
+	fi    
+fi
+    
+
+#personal customisation file...
+[ -r /etc/profile.local ] && . /etc/profile.local
+
+unset -v GLOBSORT
+
+# Termcap is outdated, old, and crusty, kill it.
+unset TERMCAP
+
+# Man is much better than us at figuring this out
+unset MANPATH
+

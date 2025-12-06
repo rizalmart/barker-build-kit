@@ -1,0 +1,49 @@
+#!/bin/bash
+
+. /etc/rc.d/PUPSTATE
+
+WCOMPOSITOR="$(cat /etc/wayland-compositors.list 2>/dev/null | tr '\n' ' ')"
+
+if [ "$(pidof -s X Xorg $WCOMPOSITOR)" != "" ]; then
+  [ "$DISPLAY" == "" ] && export DISPLAY=:0
+  [ "$WAYLAND_DISPLAY" == "" ] && export WAYLAND_DISPLAY=wayland-0
+  [ "$XDG_RUNTIME_DIR" == "" ] && export XDG_RUNTIME_DIR=/run/runtime-root
+fi
+
+case $PUPMODE in
+5)
+  shutdownconfig
+  retval=$?
+  ;;
+3|7|13|66)
+
+  . /etc/eventmanager
+  
+  ANSWER="RAMDISK_SAVE_SESSION=n"
+  
+  if [ "$RAMSAVEINTERVAL" != "" ] && [ $RAMSAVEINTERVAL -eq 0 ] ; then
+   if [ "$ASKTOSAVE" == "true" ]; then
+      asktosave_session
+      retval=$?
+		if [ $retval -eq 0 ]; then
+		 ANSWER="RAMDISK_SAVE_SESSION=1"
+		else
+		 ANSWER="RAMDISK_SAVE_SESSION=0"
+		fi 
+   else
+    if [ ! -f /var/local/savesession_result ]; then
+      ANSWER="RAMDISK_SAVE_SESSION=0"
+      retval=1
+    fi
+   fi
+  elif [ "$RAMSAVEINTERVAL" != "" ] && [ $RAMSAVEINTERVAL -ge 0 ] ; then
+   ANSWER="RAMDISK_SAVE_SESSION=1" 
+   retval=0
+  fi
+  
+  echo $ANSWER > /var/local/savesession_result 
+  
+  ;;
+esac
+
+exit $retval

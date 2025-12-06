@@ -1,0 +1,89 @@
+#!/bin/bash
+# Script to update all installed Debian packages
+
+if [ ! -f /proc/cmdline ]; then
+  export ROOTFS_SANDBOX="1"
+  busybox mount -t proc none /proc
+  export PROC_MOUNTED="y"
+fi
+
+if [ ! -d /sys/class ]; then
+   busybox mount -t sysfs none /sys
+   export SYS_MOUNTED="y"
+fi
+
+if [ "$ROOTFS_SANDBOX" == "" ]; then
+  echo "Not sandboxed rootfs"
+  exit 1
+fi
+
+umount_fs(){	
+  [ "$PROC_MOUNTED" != "" ] && busybox umount -l /proc 2>/dev/null
+  [ "$SYS_MOUNTED" != "" ] && busybox umount -l /sys 2>/dev/null
+}
+
+trap umount_fs EXIT
+trap umount_fs TERM
+trap umount_fs KILL
+trap umount_fs SIGKILL
+trap umount_fs SIGTERM
+
+echo "Updating package list..."
+apt update
+
+echo "Upgrading installed packages..."
+apt upgrade -y
+
+echo "Performing full distribution upgrade (if available)..."
+apt full-upgrade -y
+
+echo "Removing unnecessary packages..."
+apt autoremove -y
+
+echo "Cleaning up retrieved package files..."
+apt autoclean
+
+rm -rf /var/cache/apt/archives/*.deb
+rm -f /var/cache/apt/*.bin
+rm -f /var/cache/swcatalog/cache/*
+rm -f /var/cache/debconf/templates.dat-old
+rm -f /var/lib/flatpak/repo/tmp/cache/summaries/*.sub
+rm -f /var/lib/dpkg/*-old
+rm -rf /var/log/apt/*
+rm -f /var/log/*.log
+
+find /usr -type d | xargs -i fix-duplicates '{}'
+find /var/lib/swcatalog/icons -type d | xargs -i fix-duplicates '{}'
+
+rm -f /usr/share/fonts/opentype/unifont/unifont_*.otf
+rm -rf /usr/share/unifont
+
+find /usr -type f -name "*.a" | xargs -i rm -f '{}'
+find /usr -type f -name "*.la" | xargs -i rm -f '{}'
+
+rm -rf /usr/local/share/qt6/translations/* 2>/dev/null
+rm -rf /usr/local/share/locale/* 2>/dev/null
+rm -rf /usr/local/share/man/* 2>/dev/null
+rm -rf /usr/local/share/doc/* 2>/dev/null
+rm -rf /usr/local/share/info/* 2>/dev/null
+
+
+rm -f /usr/bin/gdb 2>/dev/null
+rm -f /usr/bin/x86_64-linux-gnu-lto-dump* 2>/dev/null
+#rm -rf /usr/libexec/gcc/* 2>/dev/null
+rm -rf /usr/share/qt6/translations/* 2>/dev/null
+rm -rf /usr/share/locale/* 2>/dev/null
+rm -rf /usr/share/man/* 2>/dev/null
+rm -rf /usr/share/doc/* 2>/dev/null
+rm -rf /usr/share/info/* 2>/dev/null
+
+
+if [ "$ROOTFS_SANDBOX" != "" ]; then
+   rm -f /dev/null
+fi
+
+echo "" > /etc/machine-id
+
+umount_fs
+
+echo "System packages are now fully updated."

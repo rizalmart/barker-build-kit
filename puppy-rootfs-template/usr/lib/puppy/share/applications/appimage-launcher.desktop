@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Version=1.0
+Type=Application
+NoDisplay=true
+Exec=appimage-launcher %f
+Name=AppImage Launcher
+Icon=appimage
+Comment=Launch AppImage
+MimeType=application/appimage;application/vnd.appimage;application/x-iso9660-appimage;

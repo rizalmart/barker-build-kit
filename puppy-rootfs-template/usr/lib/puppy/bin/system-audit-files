@@ -1,0 +1,73 @@
+#!/bin/sh
+#find files which does not belong to any installed packages
+#written by mistfire
+
+rm -f /tmp/stray-files 2>/dev/null
+rm -f /tmp/rootfs-files.list 2>/dev/null
+
+echo "Creating file database..."
+
+cat /var/packages/builtin_files/* | sort | uniq > /tmp/rootfs-files.list.pre
+cat /var/packages/package-files/*.files 2>/dev/null | sort | uniq >> /tmp/rootfs-files.list.pre
+cat /tmp/rootfs-files.list.pre | sort | uniq > /tmp/rootfs-files.list
+rm -f /tmp/rootfs-files.list.pre
+
+for path1 in /lib /usr/lib /usr/local/lib /lib64 /usr/lib64 
+do
+ 
+ if [ -e $path1 ]; then
+
+    echo "searching in $path1 ..."
+
+	for file1 in $(find $path1 -type f -name "*.so" | grep -vE "^\/lib\/modules")
+	do
+	 
+	 xfile="$(basename $file1)"
+
+	 if [ "$(cat /tmp/rootfs-files.list | grep "/$xfile" )" == "" ]; then
+	  echo $file1 >> /tmp/stray-files.txt
+	 fi
+
+	done
+	
+ fi
+
+done
+
+for path1 in /bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /usr/libexec
+do
+
+	echo "searching in $path1 ..."
+
+	for file1 in `find $path1 -type f -name "*" | grep -vE '\-FULL$'`
+	do
+	 
+	 xfile="$(basename $file1)"
+
+	 if [ "$(file "$file1" | grep "ELF" | grep "exec")" != "" ]; then
+
+	   if [ "$(cat /tmp/rootfs-files.list | grep "/$xfile" )" == "" ]; then
+		echo $file1 >> /tmp/stray-files.txt
+	   fi
+	 
+	 fi
+
+	done
+
+done
+
+
+echo "searching in /usr/share ..."
+
+for file1 in `find "/usr/share" -type f -name "*" | grep -vE "\/icons\/|\/mime\/|\/audio\/|\/sounds\/|\/themes\/|\/wallpaper\/|\/backgrounds\/|\/desktop\-directories\/|\/doc\/|\/pkg\/|\/applications\/|\/pixmaps\/|\/buildpet\/|\/boot-dialog\/|\/fonts\/|gschemas\.compiled"`
+do
+ 
+ xfile="$(basename $file1)"
+
+ if [ "$(cat /tmp/rootfs-files.list | grep "/$xfile" )" == "" ]; then
+  echo $file1 >> /tmp/stray-files.txt
+ fi
+
+done
+
+echo "Stray files saved in /tmp/stray-files"

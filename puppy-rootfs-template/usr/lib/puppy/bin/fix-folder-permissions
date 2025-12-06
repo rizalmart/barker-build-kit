@@ -1,0 +1,45 @@
+#!/bin/bash
+
+echo "Fixing folder permissions..."
+
+for fld in /tmp /var/tmp /var/lock
+do
+ chmod 1777 $fld
+ chown root:root $fld
+done
+
+for fld in /run /var/run /var/log /var/lib /var/cache /var/spool /var/state /var/www
+do
+ chmod 1775 $fld
+ chown root:root $fld
+done
+
+
+chmod 1775 /var/cups
+chown root:lp /var/cups
+
+chmod 1775 /var/cups/private-directory
+
+chmod 1775 /var/spool/cups/tmp
+
+chmod 1775 /var/spool/cups
+chown root:lp /var/spool/cups
+
+chmod 1775 /var/cache/cups
+chown root:lp /var/cache/cups
+
+chmod 1775 /var/cache/cups/rss
+
+chmod 1775 /var/spool/cron
+chown root:root /var/spool/cron
+
+chmod 1775 /var/spool/mail
+chown mail:mail /var/spool/mail
+
+chmod 1775 /var/spool/at
+chown root:daemon /var/spool/at
+
+
+chown root:sambashare /var/lib/samba/usershares
+chmod 1775 /var/lib/samba/usershares
+chmod +t /var/lib/samba/usershares

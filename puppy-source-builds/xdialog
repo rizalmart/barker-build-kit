@@ -1,0 +1,35 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# xdialog (main branch)
+wget -O xdialog.zip \
+  https://github.com/rizalmart/Xdialog/archive/refs/heads/master.zip
+
+echo "Extracting..."
+unzip xdialog.zip
+
+echo "Building xdialog..."
+cd "Xdialog-master"
+automake --add-missing
+libtoolize
+autoreconf -fi
+chmod +x ./configure
+./configure --prefix=/usr/local --with-gtk3
+make
+make install  # Usually goes to /usr/local/bin by default
+
+if [ -f /usr/local/bin/Xdialog ]; then
+ strip --strip-unneeded /usr/local/bin/Xdialog
+ ln -sr /usr/local/bin/Xdialog /usr/local/bin/xdialog
+fi
+
+cd /tmp
+
+rm -rf ${WORKDIR}

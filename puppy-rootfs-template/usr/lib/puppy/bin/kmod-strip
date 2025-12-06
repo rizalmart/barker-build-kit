@@ -1,0 +1,25 @@
+#!/bin/sh
+#strips kernel modules in a folder
+#written by mistfire
+
+modpath="$1"
+
+if [ "$modpath" == "" ]; then
+ echo  "Usage: $0 <kernel module folder>
+ removes unnecessary symbols in the kernel modules"
+ exit
+fi
+
+if [ ! -d "$modpath" ]; then
+ echo "Invalid path"
+ exit 2
+fi
+
+if [ "$(which strip)" == "" ]; then
+  echo "strip command not found"
+  exit 3
+fi
+
+find "$modpath" -type f -name "*.ko" | xargs -i strip --strip-unneeded '{}'
+
+echo "strip process complete"

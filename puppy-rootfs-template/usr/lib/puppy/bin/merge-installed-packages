@@ -1,0 +1,30 @@
+#!/bin/sh
+
+while IFS= read -r line
+do
+
+  #echo "$line"
+  bfile="$(echo "$line" | cut -f 1 -d '|')"
+  pkgname4="$(echo "$line" | cut -f 2 -d '|')"
+  
+  if [ "$pkgname4" != "" ] && [ "$bfile" != "$pkgname4" ]; then
+   
+   mv -f "/var/packages/package-files/${bfile}.files" "/var/packages/builtin_files/$pkgname4" 2>/dev/null
+   
+   if [ -d /var/packages/package-specs ]; then
+    [ ! -e /var/packages/package-specs/${pkgname4}.specs ] && echo "$line" > /var/packages/package-specs/${pkgname4}.specs 
+   fi
+   
+  fi
+  
+done < /var/packages/user-installed-packages
+
+echo "" > /var/packages/user-installed-packages
+
+if [ -d /var/packages/package-specs ]; then
+ cat /var/packages/package-specs/*.specs > /var/packages/woof-installed-packages
+fi
+
+rm -f /var/packages/package-scripts/* 2>/dev/null
+
+rm -rf /tmp/* 2>/dev/null

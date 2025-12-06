@@ -1,0 +1,23 @@
+# Default runlevel
+id:5:initdefault:
+
+#init
+init:S:sysinit:/usr/lib/puppy/etc/core-scripts/rc.sysinit sysvinit slackware S
+
+#shutdown
+shd:0:wait:/usr/lib/puppy/etc/core-scripts/rc.shutdown poweroff
+
+#reboot
+rb:6:wait:/usr/lib/puppy/etc/core-scripts/rc.shutdown reboot
+
+# Terminal configuration
+ca::ctrlaltdel:/sbin/reboot
+#1:1234:respawn:agetty --autologin root 115200 tty1 linux
+1a:1234:respawn:getty 115200 tty1
+dm:5:respawn:/usr/lib/puppy/bin/pupdm
+2:1234:respawn:getty 38400 tty2
+3:1234:respawn:getty 38400 tty3
+4:1234:respawn:getty 38400 tty4
+5:1234:respawn:getty 38400 tty5
+6:1234:respawn:getty 38400 tty6
+

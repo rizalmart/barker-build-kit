@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=StickPup - usb stick installer
+Comment=usb stick installer
+Exec=stickpup
+Icon=gnibbles
+Terminal=false
+Type=Application
+Categories=X-Setup-installation;
+GenericName=StickPup

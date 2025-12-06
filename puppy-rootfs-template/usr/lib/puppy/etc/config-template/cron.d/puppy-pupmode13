@@ -1,0 +1,1 @@
+*/10 * * * * root /usr/lib/puppy/sbin/pupmode13-cron-helper

@@ -1,0 +1,21 @@
+#!/bin/ash
+
+TIMEZONE="$(readlink /etc/localtime)"
+
+if [ -f "$TIMEZONE" ]; then
+	TZ_VAL="$(tail -n1 $TIMEZONE)"
+	if [ "${TZ_VAL:0:1}" = "<" ]; then
+		if [ "${TIMEZONE:0:3}" = "Etc" ]; then
+			TZ_VAL="${TZ_VAL%>*}"; TZ_VAL="${TZ_VAL#<}"
+			if [ "${TZ_VAL:0:1}" = "-" ]; then
+				TZ_VAL="${TZ_VAL#-}"; TZ_VAL="${TZ_VAL#0}"; TZ_VAL="-${TZ_VAL}"
+			else
+				TZ_VAL="${TZ_VAL#+}"; TZ_VAL="${TZ_VAL#0}"
+			fi
+			TZ_VAL="XXX${TZ_VAL}"
+		else
+			TZ_VAL="XXX${TZ_VAL#*>}"
+		fi
+	fi
+	[ "$TZ_VAL" ] && echo "$TZ_VAL"
+fi

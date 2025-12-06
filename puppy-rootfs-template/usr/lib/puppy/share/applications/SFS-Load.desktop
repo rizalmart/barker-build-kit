@@ -1,0 +1,11 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=SFS-Load
+Icon=puppy-sfs
+Comment=Load squash files on-the-fly
+Exec=sfs_load
+Terminal=false
+Type=Application
+Categories=X-SetupEntry;PackageManager
+GenericName=SFS file loader
+MimeType=application/vnd.squashfs;

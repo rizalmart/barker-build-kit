@@ -1,0 +1,17 @@
+#!/bin/sh
+
+if [ "$1" == "" ]; then
+ echo "Usage: $0 [AppImage file]"
+ exit
+fi
+
+file1="$1"
+dir1="$(dirname $1)"
+
+#[ "$(which gearlever)" != "" ] && exec gearlever $@
+
+if [ ! -x "$file1" ]; then
+ chmod +x "$file1"
+fi
+
+exec "$file1"

@@ -1,0 +1,24 @@
+# Default settings for earlyoom. This file is sourced by /bin/sh from
+# /etc/rc.d/rc.earlyoom
+
+# Options to pass to earlyoom
+# EARLYOOM_ARGS="-r 3600"
+
+# Examples:
+
+# Print memory report every minute instead of every hour
+# EARLYOOM_ARGS="-r 60"
+
+# Available minimum memory 5%
+# EARLYOOM_ARGS="-m 5"
+
+# Available minimum memory 15% and free minimum swap 5%
+# EARLYOOM_ARGS="-m 15 -s 5"
+
+# Avoid killing processes whose name matches this regexp
+# EARLYOOM_ARGS="--avoid '(^|/)(init|X|sshd|firefox)$'"
+
+# See more at `earlyoom -h'
+
+EARLYOOM_ARGS="-r 0 -m 12,10 -s 55,50 --avoid '(^|/)(sysvinit|init|systemd|busybox|runit|openrc|wayback|Xwayland|X|Xvesa|Xorg|labwc|Hyprland|river|miriway|sway|wayfire|weston|cage|cosmic-comp|dwl|waybox|swayfx|lxqt-session|kwin|kwin_x11|kwin_wayland|ksmserver|systemsettings|baloo_file|polkit-kde-authentication-agent-1|polkit-gnome-authentication-agent-1|mutter|muffin|gnome-session|cinnamon-session|mate-session|plasmashell|pulseaudio|pipewire|pipewire-pulse|wireplumber|gvfsd|gvfsd-fuse|gvfsd-trash|gvfsd-metadata|bluetoothd|obexd|dbus|dbus-launch|dbus-daemon|polkitd|freememapplet_tray|crond|atd|mpris-proxy|acpid|udevd|upowerd|seatd|python|elogind-daemon|lightdm|sddm|gdm|lxdm|wpa_supplicant|NetworkManager|ModemManager|sstp-client|pppd|pptpd|ipsec|charon|openvpn|jackd|cupsd|smbd|apache2|mysqld|mariadbd|postgres|mongod|node|lighttpd|hiawatha|sqlservr|sshd|ssh-agent|filezilla|ftpd|vsftp|mksquashfs|gcc|clang|rustc|valac|make|ninja|meson|xfburn|k3b|brasero|dd|cdrecord|wodim|growisofs|mkisofs|xfwm4|xfsettingsd|xfdesktop|xfce4-power-manager|xfce4-panel|xfce4-notifyd|xdg-desktop-portal|gnome-shell|plasmashell|fusermount3|swaybg|jwm|icewm|fbpanel|sfwbar|waybar|ffmpeg|snapmergepuppy|snapmergepuppy_overlay|apt|dnf|pacman|nm-applet|dconf-service|daemon|gnome-keyring-daemon|save2flash|dhcpcd|uhcpcd|firewalld|wget|curl|axel)$' --prefer '(^|/)(chrome|chrome-sandbox|chromium|firefox|microsoft-edge|brave|epiphany|gnome-web|falkon|midori|waterfox|QtWebEngineProcess)$'"
+

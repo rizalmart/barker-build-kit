@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=e3StickPup - ext3 usb stick installer
+Comment=ext3 usb stick installer
+Exec=e3stickpup
+Icon=gnibbles
+Terminal=false
+Type=Application
+Categories=X-Setup-installation;
+GenericName=e3StickPup

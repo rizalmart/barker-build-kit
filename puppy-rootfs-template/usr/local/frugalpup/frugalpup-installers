@@ -1,0 +1,90 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+ICONDIR=/usr/share/pixmaps
+
+if [ ! -f /usr/share/icons/hicolor/48x48/apps/gnibbles.png ]; then
+	if [ -e $ICONDIR/gnibbles.png ]; then
+		ln -sf $ICONDIR/gnibbles.png /usr/share/icons/hicolor/48x48/apps && gtk-update-icon-cache -f -i /usr/share/icons/hicolor 2>/dev/null
+	else
+		binDir="$(dirname $(readlink -f ${0}))"
+		ln -sf "$binDir/doc/gnibbles.png" $ICONDIR/gnibbles.png
+		ln -sf "$binDir/doc/gnibbles.png" /usr/share/icons/hicolor/48x48/apps && gtk-update-icon-cache -f -i /usr/share/icons/hicolor 2>/dev/null
+	fi
+fi
+
+[ "`which gtkdialog4 2>/dev/null`" ] && GTKDIALOG=gtkdialog4 || GTKDIALOG=gtkdialog
+export GTKDIALOG
+
+export frugalpup='
+<window title="'$(gettext 'FrugalPup')'" icon-name="gnibbles" resizable="false">
+<vbox space-expand="true" space-fill="true">
+  <vbox margin="2">
+   <text use-markup="true" homogeneous="true" space-expand="false" space-fill="true"><label>"                    '"<b><span size='"'x-large'"'>$(gettext 'FrugalPup Installers')</span></b>"'                    "</label></text>
+  </vbox>
+  <vbox margin="2" spacing="10" space-expand="true" space-fill="true">
+    <hseparator space-expand="false" space-fill="false"></hseparator>
+    <hbox spacing="10" homogeneous="true" space-expand="true" space-fill="true">
+      <button image-position="2" tooltip-text=" '$(gettext 'Manage multiple Puppies, preferably on Linux')' 
+ '$(gettext 'filesystem on HD, SSD, USB stick or SD card.')' ">
+        <label>'$(gettext 'FrugalPup')'</label>
+        <input file>'$ICONDIR'/puppy/install_options.svg</input><height>42</height><width>42</width>
+        <action>frugalpup &</action>
+      </button>
+      <button image-position="2" tooltip-text=" '$(gettext 'Install a single Puppy and Grub2, preferably to a')' 
+ '$(gettext 'Linux filesystem on HD, SSD, USB stick or SD card.')' ">
+        <label>'$(gettext 'DiskPup')'</label>
+        <input file>'$ICONDIR'/puppy/install.svg</input><height>42</height><width>42</width>
+        <action>diskpup &</action>
+      </button>
+    </hbox>
+    <hseparator space-expand="false" space-fill="false"></hseparator>
+    <hbox spacing="10" homogeneous="true" space-expand="true" space-fill="true">
+      <button image-position="2" tooltip-text=" '$(gettext 'Install single Puppy and Grub2 to USB fat32 partition')' ">
+        <label>'$(gettext 'StickPup')'</label>
+        <input file>'$ICONDIR'/puppy/disk_usb.svg</input><height>42</height><width>42</width>
+        <action>stickpup &</action>
+      </button>
+      <button image-position="2" tooltip-text=" '$(gettext 'Install single Puppy and Grub2 to USB f2fs partition')' ">
+        <label>'$(gettext 'f2StickPup')'</label>
+        <input file>'$ICONDIR'/puppy/disk_usb.svg</input><height>42</height><width>42</width>
+        <action>f2stickpup &</action>
+      </button>
+    </hbox>
+
+    <hbox spacing="10" homogeneous="true" space-expand="true" space-fill="true">
+      <button image-position="2" tooltip-text=" '$(gettext 'Install single Puppy and Grub2 to USB ext3 partition')' ">
+        <label>'$(gettext 'e3StickPup')'</label>
+        <input file>'$ICONDIR'/puppy/disk_usb.svg</input><height>42</height><width>42</width>
+        <action>e3stickpup &</action>
+      </button>
+      <button image-position="2" tooltip-text=" '$(gettext 'Install single Puppy and Grub2 to USB ext4 partition')' ">
+        <label>'$(gettext 'e4StickPup')'</label>
+        <input file>'$ICONDIR'/puppy/disk_usb.svg</input><height>42</height><width>42</width>
+        <action>e4stickpup &</action>
+      </button>
+    </hbox>
+
+    <hseparator space-expand="false" space-fill="false"></hseparator>
+
+    <hbox spacing="10" space-expand="true" space-fill="true">
+       <button space-expand="true" space-fill="true">
+        <label>'$(gettext 'Help')'</label>
+        <input file>'$ICONDIR'/puppy/help.svg</input><height>22</height><width>22</width>
+        <action>defaulthtmlviewer /usr/share/doc/frugalpup.html &</action>
+       </button>
+       <button space-expand="true" space-fill="true">
+        <label>'$(gettext 'Quit')'</label>
+        <input file>'$ICONDIR'/puppy/quit.svg</input><height>22</height><width>22</width>
+        <action>exit:quit_now</action>
+       </button>
+    </hbox>
+
+  </vbox>
+</vbox>
+<action signal="key-press-event" condition="command_is_true([ $KEY_SYM = Escape ] && echo true )">exit:EXIT</action>
+</window>'
+
+$GTKDIALOG -p frugalpup
+unset frugalpup

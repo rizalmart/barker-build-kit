@@ -1,0 +1,293 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+do_exit() {
+	[ "$STICK_LIST" ] && [ -f "$STICK_LIST" ] && rm "$STICK_LIST"
+	[ "$TMP_BLK" ] && [ -f "$TMP_BLK" ] && rm "$TMP_BLK"
+	[ "$CACHE_FN" ] && [ -f "$CACHE_FN" ] && rm "$CACHE_FN"
+	[ "$TMP_SRC_DIR" ] && [ -d "$TMP_SRC_DIR" ] && rm -rf "$TMP_SRC_DIR"
+	[ "$SRC_MTD" ] && umount "$SRC_MTD" 2>/dev/null
+	[ "$XPID" ] && kill -9 $XPID 2>/dev/null
+	if [ "$1" ]; then
+		yad $YAD_STD_OPTS --title "${Tt}" --width=400 --text-align=center \
+			--text "${MuBig}${1}${MuBe}" \
+			--button=${TbOk}!gtk-ok:0
+	fi
+	exit $2
+}
+
+error_exit() {
+	do_exit "$1" 1
+}
+
+normal_exit() {
+	do_exit "$1" 0
+}
+
+# check Grub2 uefi and mbr
+grub2_chk() {
+	EFI_TAR=''
+	if [ -s "$PUP_GRUB/$EFI_FN" ]; then
+		EFI_TAR="$PUP_GRUB/$EFI_FN"
+	else
+		[ -s "$EXE_DIR/$EFI_FN" ] && EFI_TAR="$EXE_DIR/$EFI_FN"
+	fi
+	[ "$EFI_TAR" ] || error_exit "$(gettext 'grub2-efi support missing')"
+	MBR_TAR=''
+	if [ -s "$PUP_GRUB/$MBR_FN" ]; then
+		MBR_TAR="$PUP_GRUB/$MBR_FN"
+	else
+		[ -s "$EXE_DIR/$MBR_FN" ] && MBR_TAR="$EXE_DIR/$MBR_FN"
+	fi
+	[ "$MBR_TAR" ] || error_exit "$(gettext 'grub2-mbr support missing')"
+}
+
+boot_part_chk() {
+	STICK_LIST="/tmp/${myName}_vfat_list.txt"
+	[ -f "$STICK_LIST" ] && rm "$STICK_LIST"
+
+	get_device "$SRC_PART"
+
+	SEL='TRUE'
+	probedisk | grep 'usb' |
+	while IFS='' read ONE_LINE; do
+		DRV="${ONE_LINE%%|*}"; DRV="${DRV#/dev/}"
+		[ "$DRV" = "$get_device_RET" ] && continue # don't clobber source
+		grep -m1 "$DRV" /proc/mounts >/dev/null && continue # mounted
+		REMOV=''
+		[ -f /sys/block/$DRV/removable ] && read REMOV < /sys/block/$DRV/removable
+		[ "$REMOV" = "1" ] || continue # not stick
+		DSIZE='0'
+		[ -f /sys/block/$DRV/size ] && read DSIZE < /sys/block/$DRV/size
+		[ "$DSIZE" = "0" ] && continue # not real
+		echo "$SEL" >> "$STICK_LIST"
+		echo "$DRV" >> "$STICK_LIST"
+		DESC="${ONE_LINE##*|}"
+		echo "$DESC" >> "$STICK_LIST"
+		SEL='FALSE'
+	done
+	if [ ! -s "$STICK_LIST" ]; then
+		if [ "$SRC_PART" ]; then
+			error_exit "$(gettext 'Will not overwrite source usb stick')
+$(gettext 'No other unmounted usb stick found')"
+		else
+			error_exit "$(gettext 'No unmounted usb stick found')"
+		fi
+	fi
+}
+
+get_drv_name() {
+	Tm0="$(gettext 'destination')"
+	Tm1="$(gettext 'Puppy is written to the usb stick selected here.')"
+	Tm2="$(gettext 'Select a destination stick:')"
+	DRV_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --width=260 \
+		--text "${Tm1}
+
+${Tm2}" \
+		--list --print-column=2 --radiolist --column=:RD --column=Drive --column=Description < $STICK_LIST \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	DRV_NAME="${DRV_SPEC%%|*}"
+	rm "$STICK_LIST"
+}
+
+get_boot_type() {
+	BOOT_TYPE='both'
+#	BOOT_TYPE='uefi'
+}
+
+get_source() {
+	Tm0="$(gettext 'Source type')"
+	Tm1="$(gettext 'StickPup installs a single Puppy to a usb stick.')"
+	Tm2="$(printf "$(gettext 'The usb stick is formated with a single %s partition.')" "${MuPurple}fat32${MuEnd}")"
+	Tm3="$(gettext 'The selected source Puppy is then installed on it.')"
+	Tm4="$(gettext 'Select the source type:')"
+	Tm7="$(gettext "A .iso file")"
+	Tm8="$(gettext "A .zip file")"
+	Tm9="$(gettext 'A local directory')"
+	Tm10="$(gettext 'This Puppy')"
+	SRC_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=240 \
+		--text "${Tm1}
+
+${Tm2}
+${Tm3}
+
+${Tm4}" \
+		--list --no-headers --print-column=2 --radiolist --column=:RD --column=:TXT --column=:TXT \
+		TRUE 'iso' "  ${Tm7}" FALSE 'zip' "  ${Tm8}" FALSE 'directory' "  ${Tm9}" FALSE 'this' "  ${Tm10}" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	SRC_TYPE="${SRC_SPEC%%|*}"
+
+	SRC_DIR=''; SRC_FN=''
+	if [ "$SRC_TYPE" = "this" ]; then
+		. /etc/rc.d/PUPSTATE
+		#mainly to catch unplugged usb devices, but doing it for all
+		for ONE_PARM in $(head -n1 /proc/cmdline); do
+			case $ONE_PARM in
+				psfspart=*) PSFSID="${ONE_PARM#*=}"; break ;;
+				pdrv=*) PSFSID="${ONE_PARM#*=}"; break ;;
+				pupsfs=*) PSFSID="${ONE_PARM#*=}"; break ;;
+				pdev1=*) PSFSID="${ONE_PARM#*=}"; break ;;
+			esac
+		done
+		if [ "$PSFSID" ]; then
+			TMP_BLK="/tmp/${myName}_$$_blk_list.txt"
+			busybox blkid | grep -v 'squashfs' | grep -v 'swap' | grep -v 'zram' > "$TMP_BLK"
+			ID_PART="$(grep "=\"${PSFSID}\"" "$TMP_BLK" | cut -f1 -d':')"
+			[ "$ID_PART" ] || error_exit "$(gettext 'Puppy install partition is not available')
+$(gettext 'Probably due to unplugged usb boot device')"
+			SRC_PART="${ID_PART#/dev/}"
+		else
+			SRC_PART="${PUPSFS%%,*}"
+		fi
+		ensure_mounted "$SRC_PART"
+		[ "$ensure_mounted_DID" ] && SRC_MTD="$ensure_mounted_MP"
+		[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SRC_PART\""
+		SRC_MP="$ensure_mounted_MP"
+		SFS_FN="${SRC_MP}${PUPSFS##*,}"
+		if [ -f "$SFS_FN" ]; then
+			SRC_DIR="${SFS_FN%/*}"
+			SRC_TYPE='directory'
+			SUB_DIR="${SFS_FN##*/}"; SUB_DIR="${SUB_DIR#puppy_}"; SUB_DIR="${SUB_DIR%%_*}"
+			boot_part_chk
+		else
+			error_exit "$(printf "$(gettext "Puppy file \"%s\" not found")" "$SFS_FN")"
+		fi
+	elif [ "$SRC_TYPE" = "directory" ]; then
+		Tm0="$(gettext 'Source directory')"
+		Tm1="$(gettext 'Select the directory containing Puppy files.')"
+		SRC_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+			--file --directory --width=600 --height=460 \
+			--text " ${Tm1}" \
+			--filename="/mnt/" \
+			--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		SFS_FN="$(find "$SRC_DIR" -maxdepth 1 -type f -name 'puppy_*.sfs')"
+		[ "$SFS_FN" ] || error_exit "$(gettext 'No Puppy files found in') \"$SRC_DIR\""
+		SUB_DIR="${SFS_FN##*/}"; SUB_DIR="${SUB_DIR#puppy_}"; SUB_DIR="${SUB_DIR%%_*}"
+	else
+		Tm0="$(gettext 'Source file')"
+		Tm1="$(printf "$(gettext 'Select the %s file containing Puppy files.')" "$SRC_TYPE")"
+		SRC_FN="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+			--file --file-filter "$SRC_TYPE files | *.$SRC_TYPE" --width=600 --height=460 \
+			--text " ${Tm1}" \
+			--filename="$HOME/" \
+			--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		[ -d "$SRC_FN" ] && error_exit "$(printf "$(gettext 'No %s file selected')" "$SRC_TYPE")"
+		[ "${SRC_FN##*.}" = "$SRC_TYPE" ] || error_exit "$(printf "$(gettext 'No %s file selected')" "$SRC_TYPE")"
+		SUB_DIR="${SRC_FN##*/}"; SUB_DIR="${SUB_DIR%%-*}"; SUB_DIR="${SUB_DIR%%_*}"
+	fi
+}
+
+confirm_choices() {
+	if [ "$SRC_FN" ]; then
+		SRC_DISP="$SRC_FN"
+	else
+		SRC_DISP="$SRC_DIR"
+	fi
+	Tm0="$(gettext 'confirm')"
+	Tm1="$(printf "$(gettext 'About to format %s and install Puppy from:')" "${MuPurple}${MuBig}${DRV_NAME}${MuBe}${MuEnd}")"
+	Tm2="$(gettext 'All current files on the destination usb stick will be lost.')"
+	Tm3="$(printf "$(gettext 'Click %s to continue.')" "${MuBlue}${TbOk}${MuEnd}")"
+	yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --width=260 \
+		--text "${Tm1}
+${MuPurple}${SRC_DISP}${MuEnd}
+
+${MuRed}${Tm2}${MuEnd}
+
+${Tm3}" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0
+	[ $? -eq 0 ] || error_exit
+}
+
+format_drive() {
+	gtkdialog-splash -bg yellow -close box -text "$(gettext 'Partitioning and formating') $DRV_NAME" &
+	XPID=$!
+	parted -s "/dev/$DRV_NAME" mklabel msdos
+	[ $? -eq 0 ] || error_exit "$(gettext 'Failed to create mbr partition table in') ${DRV_NAME}"
+	parted -s "/dev/$DRV_NAME" mkpart primary fat32 2048s -- -1
+	[ $? -eq 0 ] || error_exit "$(gettext 'Failed to create fat32 partition in') ${DRV_NAME}"
+	sync
+	mkfs.vfat -F 32 "/dev/${DRV_NAME}1" > /dev/null 2>&1
+	[ $? -eq 0 ] || error_exit "$(gettext 'Failed to create fat32 filesystem in') ${DRV_NAME}1"
+	sync
+	PARTUUID="$(blkid /dev/${DRV_NAME}1 | grep -o ' PARTUUID=.*' | cut -f2 -d'"')"
+	if [ "$PARTUUID" ]; then
+		VFAT_LABEL="dos${PARTUUID%%-*}"
+	else
+		VFAT_LABEL="d$(date ++%y%m%d%H%M)"
+	fi
+#	VFAT_LABEL="$(echo $VFAT_LABEL | tr '[:lower:]' '[:upper:]')"
+	fatlabel "/dev/${DRV_NAME}1" "$VFAT_LABEL" > /dev/null 2>&1
+	[ $? -eq 0 ] || error_exit "$(gettext 'Failed to add volume label to fat32 filesystem in') ${DRV_NAME}1"
+	sync
+	parted -s "/dev/$DRV_NAME" set 1 boot on
+	[ $? -eq 0 ] || error_exit "$(gettext 'Failed to set boot flag for') ${DRV_NAME}1"
+	sync
+	kill -9 $XPID
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+Tt="${TnStick} ${TnVer}"
+
+DRV_NAME=''
+BOOT_TYPE=''
+SRC_TYPE=''
+SRC_PART=''
+
+XPID=''
+SRC_DIR=''
+SUB_DIR=''
+
+grub2_chk
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext 'File %s not found')" "${MuPurple}${UTILS_DIR}/functions_part${MuEnd}")"
+. "$UTILS_DIR/functions_part"
+
+boot_part_chk
+
+get_source
+
+get_drv_name
+[ "$DRV_NAME" ] || error_exit "$(gettext 'No unmounted usb stick found')"
+diskSIZE=$(($(grep "${DRV_NAME}$" /proc/partitions | tr -s ' ' | cut -f4 -d' ') / 1024))
+[ $diskSIZE -lt 400 ] && error_exit "$(printf "$(gettext '%s is %sMiB, need 400MiB')" "${DRV_NAME}" "${diskSIZE}")"
+get_boot_type
+
+confirm_choices
+
+format_drive
+
+[ -f "$CONFIG_FN" ] && . "$CONFIG_FN"
+
+echo "SRC_TYPE='$SRC_TYPE'" > "$CACHE_FN"
+echo "SRC_FN='$SRC_FN'" >> "$CACHE_FN"
+echo "SRC_DIR='$SRC_DIR'" >> "$CACHE_FN"
+echo "SFS_PART='${DRV_NAME}1'" >> "$CACHE_FN"
+echo "SFS_DIR='/${SUB_DIR}'" >> "$CACHE_FN"
+echo "XTRA_PARMS='$minPARMS'" >> "$CACHE_FN"
+echo "SAVE_MARK=1" >> "$CACHE_FN"
+echo "AUTOSAVE='yes'" >> "$CACHE_FN"
+ERR_MSG="$("$EXE_DIR/frugalpup-dopupdir")"
+[ $? -eq 0 ] || error_exit "frugalpup-dopupdir: $ERR_MSG"
+
+echo "SFS_PART='${DRV_NAME}1'" > "$CACHE_FN"
+echo "SFS_DIR='/${SUB_DIR}'" >> "$CACHE_FN"
+echo "DEST_PART='${DRV_NAME}1'" >> "$CACHE_FN"
+echo "BOOT_TYPE='$BOOT_TYPE'" >> "$CACHE_FN"
+ERR_MSG="$("$EXE_DIR/frugalpup-dobootpart")"
+[ $? -eq 0 ] || error_exit "frugalpup-dobootpart: $ERR_MSG"
+
+normal_exit "$(gettext 'Puppy installed on') ${MuPurple}${DRV_NAME}${MuEnd}"
+
+exit

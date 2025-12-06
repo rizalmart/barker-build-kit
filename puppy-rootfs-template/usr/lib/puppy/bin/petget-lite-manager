@@ -1,0 +1,103 @@
+#!/bin/bash
+
+[ "$(whoami)" != "root" ] && exec sudo -A $0 $@
+
+# Get list of installed packages (name and description)
+pkg_list=$(cat /var/lib/petget/user-installed-packages | cut -f 2,3,10 -d '|' | sort)
+
+if [ "$pkg_list" == "" ]; then
+
+	# Show listbox with uninstalled packages
+	yad --fixed --window-icon=application-pet \
+		--image="error" \
+		--button="OK":0 \
+		--title="PET Package Manager" \
+        --text "No PET packages installed"
+	exit
+
+fi
+
+
+# Prepare the yad list input (tab-separated: "Package" "\t" "Version")
+pkg_array=()
+
+while IFS=$'|' read -r pkg version description; do
+    [ "$pkg" != "" ] && pkg_array+=("FALSE" "$pkg" "$version" "$description")
+done <<< "$pkg_list"
+
+# Show YAD checklist dialog
+selected=$(yad --window-icon=application-pet --list \
+    --width=600 --height=400 \
+    --button="Uninstall":0 --button=Cancel:1 \
+    --title="Remove Installed PET Packages" \
+    --text="Select installed pet packages to uninstall:" \
+    --column="Select" --column="Package" --column="Version" --column="Description" \
+    --multiple --separator=" " --checklist \
+    "${pkg_array[@]}" | awk '{ print $2 }' | tr '\n' ' ')
+
+#echo "$selected"
+
+# Exit if no selection
+[ -z "$selected" ] && exit 0
+
+# Convert selected space-separated packages to array
+IFS=' ' read -r -a pkg_array <<< "$selected"
+
+# Build list for yad --list
+yad_list=()
+
+for pkg in "${pkg_array[@]}"; do
+    yad_list+=("$pkg")
+done
+
+# Show confirmation listbox
+yad --window-icon=application-pet \
+    --title="Confirm Uninstall" \
+    --width=400 --height=300 \
+    --image="info" \
+    --text="The following packages will be removed." \
+    --button="Uninstall Now":0 --button=Cancel:1 \
+    --list \
+    --column="Package Name" \
+    $selected
+
+[[ $? -ne 0 ]] && exit 0
+
+
+# Choose terminal to use
+term_exec=""
+
+if command -v sakura &> /dev/null; then
+    term_exec="sakura -e bash -c"
+elif command -v mate-terminal &> /dev/null; then
+    term_exec="mate-terminal -- bash -c"
+elif command -v gnome-terminal &> /dev/null; then
+    term_exec="gnome-terminal -- bash -c"
+else
+
+	yad --fixed --window-icon=application-pet \
+			--image="error" \
+			--button="OK":0 \
+			--title="PET Manager" \
+			--text "No supported terminal found!"
+			
+	exit 1    
+    
+fi
+
+# Run uninstall in terminal
+$term_exec "echo '' > /tmp/pet-removed; for pkg1 in $selected; do if [ \"$(which pet-uninstall)\" != \"\" ]; then pet-uninstall \$pkg1; [ \$? -eq 0 ] && echo \$pkg1 >> /tmp/pet-removed ; sleep 3; fi done"
+
+# Convert selected space-separated packages to array for list display
+pkg_array=$(cat /tmp/pet-removed | xargs | tr '\n' ' ')
+
+# Show listbox with uninstalled packages
+yad --window-icon=application-pet \
+    --image="info" --text="The following packages has been removed:" \
+	--width=400 --height=300 \
+	--button="OK":0 \
+	--list \
+    --title="PET Manager: Uninstall Complete" \
+    --column="Package Name" \
+    $pkg_array
+

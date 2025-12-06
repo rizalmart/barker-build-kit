@@ -1,0 +1,400 @@
+#!/bin/sh
+#(c) Copyright Barry Kauler 2010, bkhome.org
+#Lesser GPL license v2 (/usr/share/doc/legal/lgpl-2.1.txt
+#note, 3builddistro (in Woof) renames rootfs-skeleton/sbin/initNEW to init.
+#perform a f.s. check if file /fsckme.flg exits, otherwise normal startup.
+#/etc/rc.d/rc.sysinit creates /fsckme.flg at bootup, rc.shutdown deletes it.
+#this script is /sbin/init in the main Puppy f.s., which is the very first to run.
+#in the case of not a full hd install, this script just passes execution to busybox init.
+
+if [ "$DISPLAY" ] || [ "$WAYLAND_DISPLAY" ]; then
+	#accidentally running this script kills the sy.stem
+	exit
+fi
+
+export LANG=C
+export HOME="/root"
+export PATH="/usr/lib/puppy/bin:/usr/lib/puppy/sbin:/usr/bin/overrides:/usr/sbin/overrides:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin/32:/usr/sbin/32:/usr/games:/root/my-applications/bin"
+
+export BB=/bin/busybox
+
+mount_sysmain(){
+	
+	ROOT_PREFIX="$1"
+
+	[ ! -d $ROOT_PREFIX/dev ] && $BB mkdir $ROOT_PREFIX/dev
+	[ ! -d $ROOT_PREFIX/proc ] && $BB mkdir $ROOT_PREFIX/proc
+	[ ! -d $ROOT_PREFIX/sys ] && $BB mkdir $ROOT_PREFIX/sys
+
+	# busybox mount /proc before remounting / as rw (full install)
+	$BB mount -t proc none $ROOT_PREFIX/proc
+
+	$BB mount -t sysfs none $ROOT_PREFIX/sys
+    
+    if [ "$(mount | grep -m 1 $ROOT_PREFIX/dev)" == "" ]; then
+	
+		# mount devtmpfs early
+		$BB mount -t devtmpfs devtmpfs $ROOT_PREFIX/dev
+		
+		#120503 if kernel mounts a f.s. on /dev, removes my skeleton /dev
+		$BB mkdir -p $ROOT_PREFIX/dev/pts
+		
+		$BB mount -t devpts -o dev,suid,gid=2,mode=620 none $ROOT_PREFIX/dev/pts
+
+    fi
+    
+}
+
+umount_sysmain(){
+
+	ROOT_PREFIX="$1"
+
+	for mntp in /dev/pts /proc /sys /dev
+	do
+	 $BB umount -l ${ROOT_PREFIX}${mntp} 2>/dev/null
+	done	
+	
+}
+
+print_distro_version() {
+	. /etc/DISTRO_SPECS
+	clear > /dev/console
+	echo -en "\\033[0;34m***\\033[0;37m ${DISTRO_NAME} ${DISTRO_VERSION}" >/dev/console
+	echo -en "\\033[0;34m -\\033[0;37m Linux `uname -r` " >/dev/console
+	echo -en "\\033[0;31m[\\033[0;37m`uname -m`\\033[0;31m]" >/dev/console
+	echo -e "\\033[0;34m ***\\033[0;39m" >/dev/console
+}
+
+remount_rootdev() { #${1}: rw/ro
+	
+	$BB sync
+	
+	if [ ! "$BDEV" ] ; then
+		BDEV="$($BB df | grep '^/dev/' | grep ' /$')"
+		BDEV=${BDEV%% *}
+	fi
+	
+	if [ "$BOOT_ATIME" ];then # see /etc/rc.d/BOOTCONSTRAINED, variable set in 3builddistro.
+		$BB mount -o remount,${1},${BOOT_ATIME} / 2>/dev/null #have set this to 'relatime'.
+		[ $? -eq 0 ] || $BB mount -o remount,${1},${BOOT_ATIME} $BDEV / #have set this to 'relatime'.
+	else
+		$BB mount -o remount,${1} / 2>/dev/null
+		[ $? -eq 0 ] || $BB mount -o remount,${1} $BDEV / 2>/dev/null
+	fi
+
+}
+
+set_blockdev_permissions(){
+	
+	chmod 666 /dev/null
+	chmod 666 /dev/zero
+	chmod 666 /dev/ptmx
+	chmod 666 /dev/urandom
+	chmod 666 /dev/i2c-* 2>/dev/null
+	chmod 666 /dev/[pt]ty* 2>/dev/null
+	chmod 600 /dev/console
+
+	chown root:i2c /dev/i2c-* 2>/dev/null
+	chown root:tty /dev/tty1	
+	chown root:tty /dev/ptmx
+	chown root:tty /dev/console
+
+	[ -d /dev/pts ] && chown -R root:tty /dev/pts
+	
+}
+
+
+[ -f /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+[ -f /etc/init-system.conf ] && . /etc/init-system.conf
+
+[ "$INITEXEC" == "" ] && INITEXEC='/bin/busybox init'
+
+[ "$PUPMODE" = "" ] && PUPMODE=2
+
+mount_sysmain
+
+clear > /dev/console
+
+preinit-setup > /dev/console
+
+echo "" >/dev/console
+
+set_blockdev_permissions
+
+if [ $PUPMODE -ne 2 ]; then
+	umount_sysmain
+	echo -e "Starting the main system...\n" > /dev/console
+	exec ${INITEXEC} #not a full hd install.
+fi
+
+#==============================================================
+#             full install (initrd)
+#==============================================================
+
+if [ "$1" = "initrd_full_install" ] ; then
+    echo -e "Starting the main system...\n" > /dev/console
+	print_distro_version
+	umount_sysmain
+	exec ${INITEXEC}
+fi
+
+#==============================================================
+#             full install (without initrd)
+#==============================================================
+
+# tmpfs: exec switch_root /pup_new /sbin/init ramdisk_done
+if [ "$1" = "ramdisk_done" ] ; then
+	# pdev1 is mounted rw, proc is unmounted.
+	umount_sysmain
+	exec ${INITEXEC} >/dev/null 2>&1
+fi
+
+. /etc/rc.d/BOOTCONSTRAINED # has BOOT_DISABLESWAP, BOOT_ATIME, BOOT_DIRTYWRITE.
+
+[ -z "$BOOT_ATIME" ] && BOOT_ATIME="noatime"
+
+mount_sysmain
+print_distro_version
+remount_rootdev rw #remount rw
+$BB sync
+$BB ln -snf /proc/mounts /etc/mtab 2>/dev/null
+
+if [ "$pfix" ];then 
+	for ONEFIX in ${pfix//,/ } ; do
+		case $ONEFIX in fsck|fsckp) PFSCK="yes";; esac
+	done
+fi
+
+[ $dshell ] && DSHELL="yes"
+
+
+#===================================================================
+#            determine PDEV1 and DEV1FS ...
+#===================================================================
+
+PDEV1="$(rdev | cut -f 1 -d ' ' | head -n 1)"
+
+[ "$PDEV1" = "/dev/root" ] && PDEV1="" # must check root= kernel param
+
+DEV1FS="$(grep '^/dev/root ' /proc/mounts | cut -f 3 -d ' ')"
+
+[ ! "$DEV1FS" ] && DEV1FS="$(grep ' / ' /proc/mounts | cut -f 3 -d ' ')"
+
+case $DEV1FS in
+	ext*|reiserfs|minix|f2fs) ok=1 ;;
+	*)
+		echo "${DEV1FS}: Wrong filesystem!" >/dev/console
+		echo "You should reboot now" >/dev/console
+		remount_rootdev ro #remount ro
+		$BB sync
+		$BB umount /proc
+		
+		while [ 1 ] ; do sleep 100 ; done
+		
+		;;
+esac
+
+if [ ! "$PDEV1" ] ; then # code from init_full_install
+
+	for i in $(cat /proc/cmdline) ; do
+		case $i in "root="*) PDRV=${i#root=} ;; esac
+	done
+
+	case $PDRV in
+		UUID=*) PDRV=${PDRV#UUID=} ;; #remove leading UUID=
+		*/*) PDRV=${PDRV##*/} ;; #$(basename $PDRV) 
+	esac
+
+	#${PDRV}=$(decode_id $PDRV) #decode UUID, LABEL
+	if [ "$(echo -n ${PDRV} | grep -E '^[a-z]+[0-9]')" -a "$(grep -m1 " ${PDRV}$" /proc/partitions)" ];then
+		ok=1 #is a real partition
+	else
+		PDRV="$($BB blkid | grep -m1 -E " LABEL=.${PDRV}| UUID=.${PDRV}" | cut -f1 -d: | cut -f3 -d/)" #is LABEL or UUID
+	fi
+
+	PDEV1=$PDRV
+
+fi
+
+PDEV1=${PDEV1##*/} #basename - only want drv name
+(
+	echo 'PUPMODE=2'
+	echo "PUP_HOME='/'"
+	echo "PDEV1='$PDEV1'"
+	echo "DEV1FS='$DEV1FS'"
+	echo "OUTPUT_CHARSET=UTF-8"
+	echo "export OUTPUT_CHARSET"
+) > /etc/rc.d/PUPSTATE
+
+#exec /bin/ash <dev/console >dev/console 2>&1
+
+if [ "$BOOT_ATIME" = "noatime" -a "$DEV1FS" = "ext4" ] ; then
+	if [ -e /sys/block/${PDEV1}/queue/rotational ] ; then
+		if [ "$(cat /sys/block/${PDEV1}/queue/rotational)" = "0" ] ; then
+			# enable SSD TRIM
+			BOOT_ATIME="discard,noatime"
+		fi
+	fi
+fi
+
+#===================================================================
+#create a ram disk to change /dev/root to /dev/drv and/or check f.s.
+#===================================================================
+
+OLDROOT=/oldroot
+CLEANUP=/init
+BB=/bin/busybox
+E2FSCK=/sbin/e2fsck
+CHROOT_MOUNT=/mnt/ram0
+export LANG=C
+
+### static executables
+STATIC_BB=/usr/libexec/static/busybox
+STATIC_E2FSCK=/usr/libexec/static/
+RAMDISK=yes
+#----------------------------------------------
+
+[ -x $STATIC_BB ] || STATIC_BB=/bin/busybox
+[ -x $STATIC_E2FSCK ] && FS_CHECK=yes
+
+if [ -e /fsckme.flg ] ; then
+	[ -x $STATIC_E2FSCK ] && FS_CHECK=yes
+	rm -f /fsckme.flg
+fi
+
+[ "$PFSCK" = "yes" ] && [ -x $STATIC_E2FSCK ] && FS_CHECK=yes # boot param
+if [ "$DEV1FS" != "ext3" -a "$DEV1FS" != "ext4" ] ; then
+	FS_CHECK=no
+fi
+
+#----------------------------------------------
+[ $nord ] && RAMDISK=no   #testing
+[ $yesrd ] && RAMDISK=yes #testing
+
+if [ "$RAMDISK" = "no" ] ; then #can't create a ram disk...
+	umount_sysmain
+	exec ${INITEXEC}
+fi
+#----------------------------------------------
+
+#cleanup files...
+rm -f /var/lock/LCK* /var/run/*.pid
+
+find /var -mount -type s -delete #remove sockets.
+find /var -mount -type p -delete #remove pipes.
+
+$BB sync
+
+rm -rf $CHROOT_MOUNT
+mkdir -p $CHROOT_MOUNT
+
+$BB mount -t tmpfs tmpfs $CHROOT_MOUNT
+(
+
+	cd $CHROOT_MOUNT
+	
+	mkdir -p bin etc sbin dev proc sys root tmp etc
+	
+	cp -a ${STATIC_BB} bin/busybox
+
+	for i in $(bin/busybox --list) ; do
+		ln -s busybox ./bin/$i
+	done
+
+	cat > etc/profile <<EOF
+export PATH="/bin:/sbin"
+ulimit -c 0
+umask 022
+USER=root
+LOGNAME=root
+TERM=linux
+EOF
+)
+
+mkdir -p $CHROOT_MOUNT/$OLDROOT
+cp "$0" $CHROOT_MOUNT/$CLEANUP
+cp $STATIC_E2FSCK $CHROOT_MOUNT/bin/e2fsck
+#cp -a /dev/* ${CHROOT_MOUNT}/dev/
+
+if [ "$FS_CHECK" = "yes" ] ; then
+	# find the date... # raspi: no battery-backed hardware clock, so date is wrong...
+	#-
+	HWDATE0="$(hwclock --show 2>/dev/null)" #ex: 2018-07-30 06:32:16
+	if [ ! "$HWDATE0" ] ; then
+		if [ -f /var/local/shutdown_date_saved ];then
+			read HWDATE < /var/local/shutdown_date_saved #see /etc/rc.d/rc.shutdown
+		fi
+		if [ "$HWDATE" = "" ];then #creation date of build. ex: '2012-06-28 16:20:08'
+			HWDATE="$(stat -c %z /etc/DISTRO_SPECS | cut -f 1 -d '.' | cut -f 1,2 -d ' ')"
+		fi
+	fi
+fi
+
+rm -f ${CHROOT_MOUNT}/${CLEANUP} #precaution
+cat > ${CHROOT_MOUNT}/${CLEANUP} <<EOF
+#!/bin/sh
+
+switchroot() {
+	umount /proc 2>/dev/null
+	umount /dev 2>/dev/null
+	exec switch_root \$1 /sbin/init ramdisk_done
+}
+
+$BB mount -t devtmpfs devtmpfs /dev
+$BB mount -t proc none /proc
+$BB ln -s /proc/mounts /etc/mtab 2>/dev/null
+
+if [ "$FS_CHECK" = "yes" ] ; then
+	#34=blue, 33=yellow, 32=green, 31=red, 35=purple, 36=aquablue, 38=black.
+	echo -en "\\033[1;31mNow running in ramdisk, performing filesystem check of ${PDEV1}..."  >/dev/console
+	echo -e "\\033[0;39m" >/dev/console
+	if [ "$HWDATE" ] ; then
+		date -s "$HWDATE"
+	else
+		hwclock -l -s 2>/dev/null
+	fi
+	$BB umount ${OLDROOT}/dev 2>/dev/null #if kernel configured to mount fs on /dev
+	$BB umount ${OLDROOT} || umount -f ${OLDROOT}
+	if [ \$? -eq 0 ];then
+		e2fsck -y /dev/${PDEV1} >/dev/console 2>&1
+		sync
+	else
+		echo '[tmpfs] Unable to unmount, aborting filesystem check.' >/dev/console 
+		switchroot ${OLDROOT}
+	fi
+else
+	$BB umount ${OLDROOT}/dev 2>/dev/null #if kernel configured to mount fs on /dev
+	$BB umount ${OLDROOT} || umount -f ${OLDROOT}
+	if [ \$? -ne 0 ];then
+		echo '[tmpfs] Unable to unmount $PDEV1' >/dev/console 
+		switchroot ${OLDROOT}
+	fi
+fi
+sleep 0.5
+
+[ "$DSHELL" ] && exec /bin/ash <dev/console >dev/console 2>&1
+
+mkdir -p /pup_new
+if [ "$BOOT_ATIME" ] ; then
+	$BB mount -o $BOOT_ATIME -t $DEV1FS /dev/${PDEV1} /pup_new
+else
+	$BB mount -t $DEV1FS /dev/${PDEV1} /pup_new
+fi
+sync
+switchroot /pup_new
+EOF
+
+#----------------------------------------------
+
+remount_rootdev ro #remount ro
+sync
+$BB umount /proc 2>/dev/null
+$BB umount /dev 2>/dev/null
+
+#pivot_root
+cd $CHROOT_MOUNT
+$BB pivot_root . $CHROOT_MOUNT/$OLDROOT
+exec $BB chroot . ash $CLEANUP #<dev/console >dev/console 2>&1
+
+### END ###

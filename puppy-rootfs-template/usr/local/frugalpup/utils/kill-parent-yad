@@ -1,0 +1,38 @@
+#!/bin/ash
+
+#set -x; exec &> /tmp/kill-parent-yad.log
+
+[ $# -gt 0 ] || exit 1
+echo "$@" > /tmp/kill-parent-yad-params.txt
+
+sleep 0.1
+
+if [ "$YAD_PID" ]; then
+	kill -s SIGUSR1 $YAD_PID
+	echo "Used SIGUSR1 on $YAD_PID" > /tmp/kill-parent-yad-log.txt
+	sleep 0.4
+	if [ "$(ps --no-headers -p $YAD_PID)" ]; then
+		kill -s SIGUSR1 $YAD_PID
+		echo "Used SIGUSR1 on $YAD_PID" >> /tmp/kill-parent-yad-log.txt
+	else
+		exit 0
+	fi
+	sleep 0.4
+	if [ "$(ps --no-headers -p $YAD_PID)" ]; then
+		kill -s SIGTERM $YAD_PID
+		echo "Used SIGTERM on $YAD_PID" >> /tmp/kill-parent-yad-log.txt
+	else
+		exit 0
+	fi
+	sleep 0.4
+	if [ "$(ps --no-headers -p $YAD_PID)" ]; then
+		kill -s SIGKILL $YAD_PID
+		echo "Used SIGKILL on $YAD_PID" >> /tmp/kill-parent-yad-log.txt
+	else
+		exit 0
+	fi
+else
+	echo "No PID, YAD_PID=$YAD_PID" > /tmp/kill-parent-yad-log.txt
+fi
+
+exit 1

@@ -1,0 +1,5 @@
+#!/bin/sh
+
+if ! busybox pidof puppy_autoshutdown_d >/dev/null 2>&1 ; then
+	puppy_autoshutdown_d &
+fi

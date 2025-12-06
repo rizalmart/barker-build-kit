@@ -1,0 +1,27 @@
+#!/bin/sh
+
+LAYEREDFS="$(mount | grep "on / type" | grep -E 'unionfs|overlay|aufs')"
+
+[ "$LAYEREDFS" == "" ] && exit
+
+INITRD_FLD=/initrd
+
+[ -L /initrd ] && INITRD_FLD=$(readlink /initrd 2>/dev/null)
+
+for gtkver in 2.0 3.0 4.0
+do
+
+	for fld in data dev_ro1 dev_ro2 dev_save
+	do
+		if [ "$(mount | grep "${INITRD_FLD}/mnt/${fld}")" != "" ]; then
+		  if [ "$(grep -m 1 "${INITRD_FLD}/mnt/${fld}\$" "${XDG_CONFIG_HOME}/gtk-${gtkver}/bookmarks")" == "" ]; then
+		    [ ! -d ${XDG_CONFIG_HOME}/gtk-${gtkver} ] && mkdir -p ${XDG_CONFIG_HOME}/gtk-${gtkver} 
+			echo "file://${INITRD_FLD}/mnt/${fld}" >> ${XDG_CONFIG_HOME}/gtk-${gtkver}/bookmarks
+		  fi
+		else
+		  PTRN=$(echo "file://${INITRD_FLD}/mnt/${fld}" | sed -e 's#\/#\\\/#g')
+		  sed -i -e '/'$PTRN'/d' ${XDG_CONFIG_HOME}/gtk-${gtkver}/bookmarks
+		fi
+	done
+
+done

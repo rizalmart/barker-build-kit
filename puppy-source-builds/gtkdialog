@@ -1,0 +1,33 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# gtkdialog (main branch)
+wget -O gtkdialog.zip \
+  https://github.com/puppylinux-woof-CE/gtkdialog/archive/refs/heads/master.zip
+
+echo "Extracting..."
+unzip gtkdialog.zip
+
+echo "Building gtkdialog..."
+cd "gtkdialog-master"
+meson --buildtype=release --prefix=/usr/local --bindir=/usr/local/bin -Dgtkver=3 build
+ninja -C build install
+
+# Optional: check installed binaries
+if [ -f /usr/local/bin/gtkdialog ]; then
+ strip --strip-unneeded /usr/local/bin/gtkdialog
+ ln -sr /usr/local/bin/gtkdialog /usr/local/bin/gtkdialog2
+ ln -sr /usr/local/bin/gtkdialog /usr/local/bin/gtkdialog3
+ ln -sr /usr/local/bin/gtkdialog /usr/local/bin/gtkdialog4
+fi
+
+cd /tmp
+
+rm -rf ${WORKDIR}

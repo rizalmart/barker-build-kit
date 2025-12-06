@@ -1,0 +1,9 @@
+[Desktop Entry]
+Encoding=UTF-8
+Type=Application
+NoDisplay=true
+Name=Puppy Package Installer
+Exec=petget-lite %f
+MimeType=application/pet;
+Icon=application-pet
+

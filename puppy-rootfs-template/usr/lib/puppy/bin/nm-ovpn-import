@@ -1,0 +1,30 @@
+#!/bin/sh
+
+if [ "$(whoami)" != "root" ]; then
+ sudo -A $0 $@
+ exit
+fi
+
+if [ "$(which NetworkManager)" == "" ]; then
+ /usr/lib/gtkdialog/box_ok "OpenVPN NM Importer" error "NetworkManager not installed"
+ exit
+fi
+
+OVPNFILE="$1"
+
+if [ "$OVPNFILE" == "" ]; then
+ echo "No OpenVPN file selected"
+ exit
+fi
+
+/usr/lib/gtkdialog/box_yesno "OpenVPN NM Importer" "Import the selected OpenVPN config file?"
+
+[ $? -ne 0 ] && exit
+
+nmcli connection import type openvpn file $OVPNFILE
+
+if [ $? -eq 0 ]; then
+ /usr/lib/gtkdialog/box_ok "OpenVPN NM Importer" info "OpenVPN config file sucessfully imported to NetworkManager"
+else
+ /usr/lib/gtkdialog/box_ok "OpenVPN NM Importer" error "Failed to import OpenVPN file for NetworkManager"
+fi

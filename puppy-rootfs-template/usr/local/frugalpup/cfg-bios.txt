@@ -1,0 +1,5 @@
+if [ $grub_platform = 'efi' ]; then
+  menuentry "System BIOS setup" {
+    fwsetup
+  }
+fi

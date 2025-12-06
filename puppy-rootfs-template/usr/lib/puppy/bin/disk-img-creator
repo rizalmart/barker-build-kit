@@ -1,0 +1,158 @@
+#!/bin/bash
+
+validate()
+{
+
+
+ERR=0
+	
+if [ "$DIRPATH" == "" ]; then
+ERR=1
+errmsg="Select directory first"	
+elif [ "$FNAME" == "" ]; then	
+ERR=1
+errmsg="Set filename first"
+elif [ "$FS1" == "" ]; then	
+ERR=1
+errmsg="Select filesystem first"
+elif [ "$COUNT" == "" ]; then	
+ERR=1
+errmsg="Select or set filesize first"
+else
+ERR=0
+fi	
+
+}
+
+mkfs_loop(){
+	
+	FSTYPE="$1"
+	
+	xIMGFILE="$2"
+	
+	FREELOOP=$(losetup -f)
+
+	losetup $FREELOOP $xIMGFILE
+
+	mkfs.${FSTYPE} -q $FREELOOP
+
+	losetup -d $FREELOOP	
+	
+}
+export -f mkfs_loop	
+
+make_img()
+{
+	
+validate
+
+if  [ $ERR -eq 0 ]; then
+
+	IMGPATH="$DIRPATH/$FNAME"
+
+	echo $IMGPATH
+
+	FILESIZE=`expr 1024 \* $COUNT`
+	
+	/usr/lib/gtkdialog/box_splash -close never -text "Creating disk image. Please wait..." &
+    xPID=$!
+
+	dd if=/dev/zero of=$IMGPATH bs=1k count=$FILESIZE
+
+	if [ "$FS1" == "vfat" ]; then
+	mkfs.vfat $IMGPATH	
+	elif [ "$FS1" == "ntfs" ]; then
+	mkfs.ntfs -F $IMGPATH
+	elif [ "$FS1" == "btrfs" ]; then
+	    mkfs_loop btrfs $IMGPATH
+	elif [ "$FS1" == "bcachefs" ]; then
+		mkfs_loop bcachefs $IMGPATH	
+	else
+		mkfs.$FS1 -q -m 0 -F $IMGPATH
+	fi
+	
+	kill $xPID
+	
+	/usr/lib/gtkdialog/box_ok "Success!" info "$FNAME has been created"
+
+else
+
+/usr/lib/gtkdialog/box_ok "Error!" error "$errmsg"
+	
+fi
+
+}
+
+export -f validate
+export -f make_img
+
+export DIALOG="<window title=\"Disk Image Creator\" image-name=\"/usr/share/pixmaps/puppy/floppy.svg\" resizable=\"false\">
+<vbox space-fill=\"true\">
+<hbox>
+ <text><label>Save directory:</label></text>
+   <entry accept=\"directory\">
+   <input>echo /root</input>
+   <variable>DIRPATH</variable>
+   </entry>
+   <button>
+     <input file icon=\"gtk-open\"></input>
+     <action type=\"fileselect\">DIRPATH</action>
+    </button>
+  </hbox>
+<hbox>
+ <text><label>Filename:</label></text>
+   <entry>
+   <input>echo \"image.img\"</input>
+   <variable>FNAME</variable>
+   </entry>
+</hbox>
+
+<hbox>
+ <text><label>Filesystem:</label></text>
+   <comboboxtext>
+     <item>vfat</item>
+     <item>ntfs</item>
+     <item>ext2</item>
+     <item>ext3</item>
+     <item>ext4</item>
+     <item>btrfs</item>
+     <item>bcachefs</item>
+     <variable>FS1</variable>
+   </comboboxtext>
+</hbox>
+
+<hbox>
+ <text><label>Image size in (MB):</label></text>
+   <comboboxtext>
+     <item>1</item>
+     <item>2</item>
+     <item>4</item>
+     <item>8</item>
+     <item>16</item>
+     <item>32</item>
+     <item>64</item>
+     <item>128</item>
+     <item>256</item>
+     <item>512</item>
+     <item>1024</item>
+     <item>2048</item>
+     <item>4096</item>
+     <item>8192</item>
+     <variable>COUNT</variable>
+   </comboboxtext>
+</hbox>
+
+<hbox>
+ <button>
+ <label>Create Image</label>
+ $(/usr/lib/gtkdialog/xml_button-icon execute)
+  <action>make_img</action>
+ </button>
+ <button cancel></button>
+</hbox>
+
+</vbox>
+</window>"
+
+. /usr/lib/gtkdialog/xml_info gtk #build bg_pixmap for gtk-theme
+gtkdialog --center --program=DIALOG

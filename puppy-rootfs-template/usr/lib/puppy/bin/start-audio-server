@@ -1,0 +1,66 @@
+#!/bin/sh
+
+[ ! -e /etc/audio-server ] && exit
+
+[ "$(pidof lightdm gdm kdm sddm xdm lxdm slim ly wdm)" != "" ] && exit
+
+. /etc/audio-server
+
+if [ "$AUDIO_SERVER" == "pulseaudio" ]; then
+ 
+ [ "$(grep -lE "pulseaudio" /etc/xdg/autostart/*.desktop)" != "" ] && exit
+ 
+ [ "$(pidof pulseaudio)" != "" ] && killall pulseaudio
+
+ if [ "$XDG_SESSION_TYPE" == "x11" ]; then
+  if [ "$(which start-pulseaudio-x11)" != "" ]; then
+   exec start-pulseaudio-x11 &
+  else
+   pactl info > /dev/null 2>&1 || pulseaudio --start
+  fi
+ else
+  pactl info > /dev/null 2>&1 || pulseaudio --start
+ fi
+ 
+elif [ "$AUDIO_SERVER" == "pipewire" ]; then
+
+ [ "$(grep -lE "pipewire|wireplumber" /etc/xdg/autostart/*.desktop)" != "" ] && exit
+ 
+ [ "$(pidof pipewire)" != "" ] && killall pipewire
+ 
+ exec pipewire &
+ 
+ CNT=0
+ 
+ while [ "$(pidof pipewire)" == "" ]
+ do
+  if [ $CNT -le 5 ]; then
+   sleep 1
+   CNT="$(expr $CNT + 1)"
+  else
+   break
+  fi
+ done
+ 
+ [ "$(pidof pipewire-pulse)" != "" ] && killall pipewire-pulse
+ 
+ exec pipewire-pulse &
+ 
+ CNT=0
+ 
+ while [ "$(pidof pipewire-pulse)" == "" ]
+ do
+  if [ $CNT -le 5 ]; then
+   sleep 1
+   CNT="$(expr $CNT + 1)"
+  else
+   break
+  fi
+ done
+ 
+ if [ "$(pidof pipewire)" != "" ]; then
+  [ "$(pidof wireplumber)" != "" ] && killall wireplumber
+  exec wireplumber &
+ fi
+ 
+fi

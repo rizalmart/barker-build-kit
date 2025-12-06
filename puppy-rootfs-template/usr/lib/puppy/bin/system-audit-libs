@@ -1,0 +1,113 @@
+#!/bin/sh
+
+rm -f /tmp/libdepsdb.txt 2>/dev/null
+rm -f /tmp/stray-libs.txt 2>/dev/null
+
+
+find_deps(){
+  
+  lib2="$1"
+
+  deps1="$(ldd "$lib2" 2>&1 | awk '{ print $3 }' | grep "/" | grep -vE "\/libstdc*|\/ld\-linux\-*")"
+  
+  if [ "$deps1" != "" ]; then
+   for dp in $deps1
+   do
+    
+    FINDDEP=""
+        
+    if [ -L "$dp" ]; then
+	 rfx="$(readlink $dp)"
+	 bname="$(basename $rfx)"  
+	else
+	 bname="$(basename $dp)"
+	fi
+	
+	
+	for bf1 in gcc gcc_lib glibc glibc-libs glibc-so-libs "libsigc++" "libstdc++" "gcc-g++"
+	do
+	 if [ "$(cat /var/packages/builtin_files/$bf1 2>/dev/null | grep "$bname")" != "" ]; then
+      FINDDEP="y"
+      break
+     fi
+    done 
+      
+  
+    if [ "$FINDDEP" == "" ]; then
+      
+      if [ -L "$dp" ]; then
+
+	   rf1="$(readlink $dp)"
+	   
+	   if [ "$(echo "$rf1" | grep "/")" == "" ]; then
+	    dir3="$(dirname $dp)"
+	    dp="$dir3/$rf1"
+	   else
+	    dp="$rf1"
+	   fi  
+
+	  fi
+     
+      if [ "$(cat /tmp/libdepsdb.txt 2>/dev/null | grep "$bname")" == "" ]; then	  	
+       echo "$dp" >> /tmp/libdepsdb.txt 
+       find_deps "$dp"
+      fi
+      
+    fi
+    
+   done
+  fi	
+		
+}
+
+build_db(){
+
+for fld1 in /bin /sbin /usr/bin /usr/sbin /usr/libexec /lib /lib64 /usr/lib /usr/lib64
+do
+ for lib1 in $(find $fld1 -type f -name "*" | grep -v "/lib/modules" | grep -v "/lib/firmware")
+ do
+    
+  if [ "$(file "$lib1" | grep "ELF")" != "" ]; then
+   echo "$lib1"
+   find_deps "$lib1"
+  fi
+    
+ done
+done
+	
+}
+
+build_db
+
+for fld1 in /lib /lib64 /usr/lib /usr/lib64
+do
+ for lib1 in $(find $fld1 -type f -name "*.so*" | grep -v "/lib/modules" | grep -v "/lib/firmware")
+ do
+    
+  if [ "$(file "$lib1" | grep "ELF" | grep "shared")" != "" ]; then
+   
+   echo "Scanning $lib1"
+   bname="$(basename $lib1)"	
+	
+   if [ "$(cat /tmp/libdepsdb.txt 2>/dev/null | grep "$bname")" == "" ]; then
+   
+    FINDDEP=""
+    
+	for bf1 in gcc gcc_lib glibc glibc-libs glibc-so-libs "libsigc++" "libstdc++" "gcc-g++"
+	do
+	 if [ "$(cat /var/packages/builtin_files/$bf1 2>/dev/null | grep "$bname")" != "" ]; then
+      FINDDEP="y"
+      break
+     fi
+    done 
+    
+    if [ "$FINDDEP" == "" ]; then
+     [ "$(cat /tmp/libs-nodeps.txt 2>/dev/null | grep "$bname")" == "" ] && echo "$lib1" >> /tmp/libs-nodeps.txt
+    fi
+    
+   fi
+   
+  fi
+    
+ done
+done

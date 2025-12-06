@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=e4StickPup - ext4 usb stick installer
+Comment=ext4 usb stick installer
+Exec=e4stickpup
+Icon=gnibbles
+Terminal=false
+Type=Application
+Categories=X-Setup-installation;
+GenericName=e4StickPup

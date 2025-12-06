@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=PUPMODE 13 Tray
+Comment=Tray for write caching mode
+Icon=media-floppy
+Exec=pm13 trayicon

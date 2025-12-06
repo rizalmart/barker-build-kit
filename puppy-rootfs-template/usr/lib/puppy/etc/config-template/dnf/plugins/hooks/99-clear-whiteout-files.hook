@@ -1,0 +1,5 @@
+[Transaction]
+Operation = Erase
+
+[Command]
+Execute = /usr/lib/puppy/sbin/clear-whiteout-files

@@ -1,0 +1,26 @@
+#!/bin/sh
+#Rebuild missing filesystem folders in case deleted upon package uninstallation
+#Written by mistfire
+
+for dir0 in /opt /usr /run /srv /tmp /media /var /var/run /var/tmp /var/lock
+do
+  if [ ! -d $dir0 ] && [ ! -L $dir0 ]; then
+    mkdir -p $dir0
+  fi
+done
+
+for dir1 in /usr /usr/local
+do
+  
+  if [ ! -d $dir1 ] && [ ! -L $dir1 ]; then
+    mkdir -p $dir1
+  fi
+	
+  for dir2 in /bin /etc /lib /libexec /sbin /share /share/backgrounds /share/sounds /share/audio /share/wallpapers
+  do
+   if [ ! -d $dir1/$dir2 ] && [ ! -L $dir1/$dir2 ]; then
+    mkdir -p $dir1/$dir2
+   fi
+  done
+  
+done

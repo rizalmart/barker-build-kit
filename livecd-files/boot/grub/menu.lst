@@ -1,0 +1,67 @@
+#
+# menu.lst
+#
+
+#color NORMAL            HIGHLIGHT       HELPTEXT       HEADING
+#       f/b               f/b              f/b           f/b
+color light-gray/black yellow/red cyan/black light-blue/black
+
+timeout 10
+default 0
+
+# 0.4.6a
+graphicsmode -1 800 600
+splashimage /boot/splash.jpg
+
+title Puppy Linux
+  kernel /vmlinuz    pfix=fsck pmedia=cd
+  initrd /initrd.xz
+
+title Puppy Linux - Copy SFS files to RAM\n
+  kernel /vmlinuz    pmedia=cd pfix=fsck,copy
+  initrd /initrd.xz
+
+title Puppy Linux - Don't copy SFS files to RAM\nIf you want more RAM available
+  kernel /vmlinuz    pmedia=cd pfix=fsck,nocopy
+  initrd /initrd.xz
+
+title Puppy Linux - No Kernel Mode Setting\nNo KMS
+  kernel /vmlinuz    pmedia=cd nomodeset pfix=fsck
+  initrd /initrd.xz
+  
+title Puppy Linux - RAM only - no pupsave\nBoot up Puppy without pupsave
+  kernel /vmlinuz    pmedia=cd pfix=ram,fsck
+  initrd /initrd.xz
+
+title Puppy Linux - Ram Disk SHell\nExecute 'init' then dropout to prompt in initramfs
+  kernel /vmlinuz    pmedia=cd pfix=rdsh
+  initrd /initrd.xz
+
+title
+  root
+
+title Help - Boot Params
+  configfile /boot/grub/menu_phelp.lst
+
+title
+  root
+  
+# Boot from Partition Boot Sector
+
+title Boot first hard drive (hd0,0)
+  root (hd0,0)
+  chainloader +1 || chainloader /grldr || chainloader /bootmngr
+
+title
+  root
+
+# additionals
+
+title Grub4Dos commandline\n(for experts only)
+  commandline
+
+title Reboot computer
+  reboot
+
+title Halt computer
+  halt

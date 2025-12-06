@@ -1,0 +1,59 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+<meta charset="UTF-8">
+<title>FrugalPup - settings</title>
+<link rel="SHORTCUT ICON" href="gnibbles.ico" />
+<link rel="stylesheet" type="text/css" href="frugalpup.css">
+</head>
+
+<body>
+
+<h1><img src="gnibbles.png"> FrugalPup - settings</h1>
+
+<img class="center" src="frugalpup-settings.png" alt="FrugalPup settings screen">
+
+<p>The top part of the screen provides an opportunity to enable or disable the showing of optional advanced didalogs in the <b>Puppy</b> facility.</p>
+
+<p>The middle part of the screen provides an opportunity to enable or disable <b>AUTOSAVE</b>.<br />
+If the Puppy being installed supports <b>AUTOSAVE</b>;<br />
+With <b>AUTOSAVE</b>, when you select "SAVE" on first-shutdown, and your save partition is either a "Linux" partition or "fat32" partition,<br />
+there will be no further dialogs, the "save" will be setup and proceed automatically.<br />
+If it is a "Linux" partition, a savefolder will be created, if it is a "fat32" partition the RW layer in RAM will be archived and then restored on next boot (pupmode=66).<br />
+If <b>AUTOSAVE</b> is not supported by the Puppy being installed it will simply be ignored, "normal" first-shutdown dialogs will be shown.</p>
+
+<p>The bottom part of the screen controls the appearance of "kernel boot parameters" in the "Kernel boot parameters" dialog of the <b>Puppy</b> facility.<br />
+And the "kernel boot parameters" that are automatically applied by <b>StickPup</b>, <b>f2StickPup</b> and <b>DiskPup</b></p>
+
+<p>"Web page, documentation of available Kernel boot parameters" is a button.<br />
+Click on it to open a web page documenting "The kernel’s command-line parameters", i.e. "kernel boot parameters".</p>
+
+<h3>"kernel boot parmaters" in default lists</h3>
+
+<p><b>acpi_osi=Linux</b><br />
+BIOS's usually disable functionality if Windows is not detected.<br />
+By default the kernel responds Windows when asked if Linux is running.<br />
+acpi_osi=Linux tells the kernel to respond Linux.<br />
+Bios workarounds for Windows can cause unnecessary performance penalities and other problems for all later Linux versions.</p>
+
+<p><b>libata.noacpi=1</b><br />
+This may fix some problems with older or incompatible Bios / UEFI unable to resume correctly from suspend.<br />
+Very often this also turns ACPI off.<br />
+However, disabled acpi is not recommended, because ACPI is to communicate with the hardware.<br />
+Especially in laptops (to turn off, to change the brightness, to change the volume).</p>
+
+<p><b>intel_pstate=disable</b><br />
+Intel processors by default use cpu-frequency scaling driver intel_pstate.<br />
+It only supports powersave and performance frequency-scaling-governor.<br />
+Use this to allow other frequency-scaling-governors to be used.<br />
+However, this may affect newer Intel processors in ways you do not want affected.</p>
+
+<p><b>net.ifnames=0</b><br />
+Make predictable network interface names work consistently.<br />
+If you want to default to using the old method (i.e. "eth0").<br />
+The Linux kernel may default to using predictable network interface names (i.e. "p4p1").</p>
+
+</body>
+</html>

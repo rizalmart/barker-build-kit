@@ -1,0 +1,4 @@
+#this file called from rc.sysinit
+#you can edit this file
+#When firewall is installed, will append lines to this file...
+[ -f /usr/local/share/applications/mozilla-light.desktop ] && rm /usr/local/share/applications/mozilla-light.desktop && fixmenus

@@ -1,0 +1,24 @@
+This tools allows to build debian-based puppy from scratch.
+
+folders:
+external-tools - tools will be used for processing the main puppy sfs
+puppy-rootfs-template - the puppy skeletal filesystem
+livecd-files - boot files used to build the live cd 
+puppy-source-builds - build scripts used for compiling puppy core applications. 
+
+1. To use this build kit. you must to run the script step-by-step.
+2. Before running the script you must configure it first by tinkering the following files:
+   a. build-settings.cfg - build configuration
+   b. packages.list - list of packages to be installed and part of main puppy sfs (NOTE: the package names must follow the debian package naming scheme.)
+   c. a/b/g/n/x/ydrv-packages.list - list of packages to be installed and part of a/b/g/n/x/ydrv sfs (NOTE: the package names must follow the debian package naming scheme.)
+   d. DISTRO_SPECS - the information about the puppy to be build
+   e. mimeapps.list - list of file associations by default
+3. Optional step: after step 1 script finished and before running step 2. Use chroot to apply some system settings or put some config files on build-rootfs folder.
+4. Before reaching the final process and build the live cd. The following process must performed
+   a. obtain the kernel, zdrv modules, and fdrv modules
+   b. place it on puppy-livecd-build folder and rename it to its corresponding names as described in DISTRO SPECS
+5. Run 05-build-livecd.sh to finally build the livecd.
+
+NOTE:
+1. barker heavily depends on the upstream package manager auto dependency resolution. Add missing packages on packages.list file when necessary
+2. If compile apps from source is needed. craft a build script around the upstream distro and place it on puppy-source-builds folder

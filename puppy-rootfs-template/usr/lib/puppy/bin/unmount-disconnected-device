@@ -1,0 +1,9 @@
+#!/bin/bash
+
+DEVBLOCK="/dev/$1"
+
+MNTPT="$(mount | grep -m 1 "$DEVBLOCK" | awk '{ print $3 }')"
+
+if [ "$MNTPT" != "" ]; then
+  busybox umount -l "$MNTPT"
+fi

@@ -1,0 +1,48 @@
+#!/bin/sh
+#Integrate package to rootfs builtin
+#written by mistfire
+
+PRELOAD_PATH="$@"
+
+[ "$PRELOAD_PATH" == "" ] && PRELOAD_PATH="/opt/preload"
+
+[ ! -e $PRELOAD_PATH ] && exit 1
+
+echo "Installing packages..."
+
+export PKG_BLACKLIST=''
+
+for pkg1 in txz tgz rpm deb pet pkg.tar.xz pkg.tar.gz pkg.tar.zst
+do
+ find $PRELOAD_PATH -type f -name "*.${pkg1}" | xargs -i pkg -f install '{}'
+done
+
+echo "Converting to builtin packages..."
+merge-installed-packages
+
+cat /var/packages/builtin_files/glibc > /var/packages/builtin_files/glibc-so-libs
+
+cp -f /etc/xdg/Thunar/uca.xml-protected /etc/xdg/Thunar/uca.xml 2>/dev/null
+
+
+ for libd in $(echo $LD_LIBRARY_PATH | tr ':' ' ')
+ do
+  for ffiver in 5 6 7 8 9 10 11 12
+  do
+	  if [ -L $libd/libffi.so.${ffiver} ]; then
+	   rf=$(realpath $libd/libffi.so.${ffiver} 2>/dev/null)
+	   if [ "$rf" != "" ] && [ -e $rf ]; then
+		echo > /dev/null
+	   else
+		rm -f $libd/libffi.so.${ffiver} 2>/dev/null
+		[ -e $libd/libffi.so ] && ln -s $libd/libffi.so $libd/libffi.so.${ffiver} 2>/dev/null 
+	   fi  
+	  fi
+  done
+ done
+
+
+echo "Cleaning up..."
+trim-system-files
+
+update-woof-installed

@@ -1,0 +1,277 @@
+#!/bin/sh
+#Barry Kauler Dec. 2010, license GPL v3 /usr/share/doc/legal.
+#based on a script by technosaurus, Dec. 2010.
+
+#set -x
+
+[ "`whoami`" != "root" ] && exec sudo -A ${0} ${@} #110505
+
+export TEXTDOMAIN=remove_builtin
+export OUTPUT_CHARSET=UTF-8
+eval_gettext () {
+  local myMESSAGE=$(gettext "$1")
+  eval echo \"$myMESSAGE\"
+}
+
+Yes_lbl="$(gettext 'Yes')"
+No_lbl="$(gettext 'No')"
+
+MSG1="`gettext \"Simple utility to 'delete' packages that are builtin\nto the read-only .sfs file (Squashfs filesystem)\"`"
+FIXMENU='no'
+
+D=/var/packages/builtin_files
+
+#===========================================================
+
+remove_builtin_pkg() {
+	
+	PKG=$1
+	
+	if [ -z "$PKG" ] ; then
+		return 1
+	fi
+	if [ ! -f $D/$PKG ] ; then
+		echo "$PKG does not exist.."
+		return 1
+	fi
+	
+	echo "Removing $PKG"
+	
+	rm -f /tmp/builtin-files.list 2>/dev/null 
+	
+	ls $D/ | grep -vE '^'${PKG}'$' | xargs -i cat $D'/{}' > /tmp/builtin-files.list 
+	
+	if grep -q '\.desktop$' ${D}/${PKG} ; then
+		FIXMENU='yes' #101222
+	fi
+	
+	if [ "$REPACK_RM_PKG" == "y" ];then 
+     if [ ! -d /tmp/${PKG} ]; then
+      mkdir /tmp/${PKG}
+     fi
+    fi
+	
+	(
+	   
+	    cat $D/$PKG | sort -r | 
+		while read file
+		do
+			if [ -f "$file" ] || [ -L "$file" ]; then
+			 if [ "$REPACK_RM_PKG" == "y" ]; then
+			  if [ -L "$file" ]; then
+			   cp --parents -f -P "$file" "/tmp/${PKG}/"
+			  else
+			   cp --parents -f "$file" "/tmp/${PKG}/"
+			  fi
+			 fi
+			 
+			 [ "$(cat /tmp/builtin-files.list | grep "$file")" == "" ] && rm -f "$file" 1>&2
+			
+			fi
+			
+			echo "${file%/*}" #get dir
+			
+		done
+		
+	) > /tmp/remove_builtin_dirs$$
+	#-- remove empty directories
+	sort -ur /tmp/remove_builtin_dirs$$ | \
+	while read dir
+	do
+		while [ 1 ] ; do
+			[ -e "$dir" ] && rmdir "$dir" 2>/dev/null
+			dir=${dir%/*} #dirname $dir
+			if [ -z "$dir" ] ; then
+				break
+			fi
+		done
+	done
+	#-- 
+
+    [ "$(which rebuild-fs-dir)" != "" ] && rebuild-fs-dir
+
+    PKGFILES="$D/$PKG"
+    
+	[ -e /usr/local/petget/z_update_system_cache.sh ] && /usr/local/petget/z_update_system_cache.sh "$PKGFILES"
+	
+	rm -f /tmp/builtin-files.list 2>/dev/null 
+	 
+	rm $D/$PKG
+	rm /tmp/remove_builtin_dirs$$
+	
+    prechar="+"
+      
+   if [ "$REPACK_RM_PKG" == "y" ]; then
+    
+    if [ -e "/var/packages/package-specs/${PKG}.specs" ]; then
+     reg1=`cat "/var/packages/package-specs/${PKG}.specs" | head -n 1`
+    else
+     reg1=`cat /var/petget/woof-installed-packages | grep "|${PKG}|" | grep -v "$prechar${PKG}"`
+     reg2=`cat /var/petget/woof-installed-packages | grep "${PKG}|" | grep -v "$prechar${PKG}"`
+    fi
+    
+    if [ "$reg1" != "" ]; then
+     echo "$reg1" > /tmp/${PKG}/pet.specs
+    else
+     echo "$reg2" > /tmp/${PKG}/pet.specs
+    fi
+       
+    cd /tmp
+   
+    tar -cf "${PKG}.tar" "./${PKG}"
+    gzip "./${PKG}.tar"
+    tgz2pet "./${PKG}.tar.gz"
+   
+    if [ ! -d /root/builtin-pkg ]; then
+     mkdir /root/builtin-pkg
+    fi
+   
+    mv "/tmp/${PKG}.pet" "/root/builtin-pkg/${PKG}.pet"
+   
+    rm -rf /tmp/${PKG}
+
+   fi	
+	
+   rm -f "/var/packages/package-specs/${PKG}.specs" 2>/dev/null
+   sed -i "\%|${PKG}|%d" /var/packages/*-installed-packages
+   return 0
+	
+}
+
+fix_menus() {
+	if [ "$FIXMENU" = "yes" ];then #101222
+		fixmenus
+		if [ "$DISPLAY" ] || [ "$WAYLAND_DISPLAY" ] ; then
+			if [ "`pidof jwm`" != "" ] ; then
+				jwm -reload || jwm -restart
+				sleep 1
+			fi
+		fi
+	fi
+}
+
+#===========================================================
+#                   COMMAND LINE
+#============================================================
+
+case $1 in -l|-list|--list)
+	
+	for pkg1 in `ls -1 $D`
+	do
+	 if [ "$(cat /var/packages/woof-installed-packages 2>/dev/null | grep "|$pkg1|")" != "" ]; then
+	  echo $pkg1
+	 fi
+	done
+	
+	exit ;;
+esac
+
+if [ "$1" ] ; then
+	for i in $@
+	do  
+		remove_builtin_pkg $i
+	done
+	 fix_menus
+	exit $?
+fi
+
+#===========================================================
+#                    GUI
+#============================================================
+
+for prepkg in `ls -1 $D`
+do
+ if [ "$(cat /var/packages/woof-installed-packages 2>/dev/null | grep "|$prepkg|")" != "" ] && [ "$(cat /etc/remove-builtin-blacklist 2>/dev/null | grep "$prepkg")" == "" ]; then
+  if [ "$PKGS" == "" ]; then
+   PKGS="$prepkg"
+  else
+   PKGS="$PKGS $prepkg"
+  fi
+ fi
+done
+
+DIALOG="dialog --aspect 10"
+MENUOPT="--checklist"
+REP=/tmp/$(basename $0).txt
+
+if [ "$DISPLAY" ] || [ "$WAYLAND_DISPLAY" ]; then
+	DIALOG=Xdialog
+fi
+
+for i in $PKGS ; do
+	CHOICES="$CHOICES $i . off"
+done
+
+PKG=`$DIALOG --stdout --backtitle "${MSG1}" --title "$(gettext 'Remove builtin packages')" --help "$(gettext "In all modes of running Puppy, other than a full hard-drive installation,\n
+all of the Puppy files are in a compressed read-only file named 'puppy.sfs'\n
+or 'wary_500.sfs' (or some similar name). So you can't actually delete these\n
+files. However, if you want to remaster the live-CD to create your own custom\n
+Puppy (see Setup menu), you can use this little program to 'pretend' to delete\n
+them -- and they will really be gone in the remastered CD. So, for example if\n
+you remove SeaMonkey, it will be gone in the remastered CD thus reducing the\n
+size of the .iso live-CD file.\n\n
+Technical note: the lists of builtin files is at /var/packages/builtin_files,\n
+the list of builtin pkgs is in /var/packages/woof-installed-packages.")" \
+$MENUOPT "$(gettext 'Select packages to remove (be careful):')" 0 0 7 $CHOICES`
+if [ ! "$PKG" ];then
+	exit
+fi
+
+PKG=$(echo "$PKG" | sed 's%/% %g')
+/usr/lib/gtkdialog/box_yesno --warning "Remove builtin pkg(s)" \
+	"Please confirm that you want to delete the following pkg(s):" "" \
+	"<b>$PKG</b>" "" "This can be a dangerous operation if you don't know what you're doing. However some more confirmation dialogs may appear..."
+if [ $? -ne 0 ] ; then
+	exit
+fi
+
+Xdialog --left --screen-center --title "$(gettext 'Remove builtin packages')" --ok-label "$Yes_lbl" --cancel-label "$No_lbl" --yesno "$(gettext 'Do you want to create pet packages for selected builtin packages')? \n\nThis will be useful if you want to bring back the builtin files.\nThe package will saved in /root/builtin-pkg"  0 0
+retval2=$?
+
+if [ $retval2 -eq 0 ]; then
+ REPACK_RM_PKG="y"
+else
+ REPACK_RM_PKG="n"
+fi
+
+
+#--
+REMOVED_PKGS=''
+#--
+
+for i in $PKG
+do
+	DEP_OF=`grep "+${i}" /var/packages/woof-installed-packages |cut -d "|" -f 2 |tr "\n" " "`
+	if [ "$DEP_OF" ] ; then
+	
+	DESCR="`grep "|${i}|" /var/packages/woof-installed-packages |cut -d "|" -f 10`"
+	
+	gxmessage -center -title  "$(gettext 'Remove builtin packages')" -buttons "$(gettext 'Yes'):0,$(gettext 'No'):1" -wrap "$(gettext 'Confirm that you want to delete') '${i}'
+
+$(gettext 'Description of package:')
+${DESCR}
+$(gettext 'For information only, these are dependencies of') '${i}':
+
+`grep "|${i}|" /var/packages/woof-installed-packages |cut -d "|" -f 9 | sed -e 's%^+%%' -e 's%,+% %g' | sed -e 's#\ #, #g'`
+
+`eval_gettext \"Warning, removing '\\\${i}' _may_ break the following packages:\"`
+$DEP_OF
+
+$(gettext 'Continue?')"
+
+		if ! [ $? -eq 0 ];then
+			continue
+		fi
+		
+	fi
+	remove_builtin_pkg $i || continue
+	REMOVED_PKGS="$REMOVED_PKGS $i"
+done
+fix_menus
+
+if [ "${REMOVED_PKGS}" ] ; then
+	/usr/lib/gtkdialog/box_ok "Remove builtin pkg(s)" info  \
+		"The following packages were removed:" "" "<b>${REMOVED_PKGS}</b>"
+fi
+
+### END ###

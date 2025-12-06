@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Boot manager
+Icon=puppy-execute
+Comment=Configure bootup apps and actions
+Exec=bootmanager
+Terminal=false
+Type=Application
+Categories=X-System;Settings;X-XFCE-SettingsDialog;X-XFCE-SystemSettings;
+GenericName=Boot manager

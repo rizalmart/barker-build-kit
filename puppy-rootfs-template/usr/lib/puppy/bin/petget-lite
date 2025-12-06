@@ -1,0 +1,57 @@
+#!/bin/bash
+
+[ "$(whoami)" != "root" ] && exec sudo -A $0 $@
+
+# Pick a .pet package
+
+pet_file="$1"
+
+if [ -z "$pet_file" ]; then
+	pet_file=$(yad --width=600 --height=400 --window-icon=application-pet --file --title="Select a PET package to install" --file-filter="PET packages | *.pet")
+fi
+
+# Cancelled?
+[ -z "$pet_file" ] && exit 1
+[ ! -f "$pet_file" ] && exit 1
+
+pkg_name=$(basename $pet_file)
+
+pkg_details="Package Name: $pkg_name"
+
+
+# Show package details in YAD form
+yad --wrap --window-icon=application-pet \
+    --width=400 --height=100 \
+    --image="info" \
+    --title="Install PET Package" \
+    --text="Install this PET package?" \
+    --text-info \
+    --filename=<(echo -e "$pkg_details") \
+    --button="Install":0 --button="Cancel":1 
+
+[[ $? -ne 0 ]] && exit 0
+
+# Install the package
+term_cmd=""
+if command -v sakura &> /dev/null; then
+    term_cmd="sakura -e bash -c"
+elif command -v gnome-terminal &> /dev/null; then
+    term_cmd="gnome-terminal -- bash -c"
+elif command -v mate-terminal &> /dev/null; then
+    term_cmd="mate-terminal -- bash -c"
+else
+    yad --window-icon=application-pet --error --text="No supported terminal emulator found!" && exit 1
+fi
+
+# Install using dpkg and fix with apt
+$term_cmd "pet-install '$pet_file' 2>/dev/null; echo \$? > /tmp/pet-install-result; sleep 3;"
+
+retval=$(cat /tmp/pet-install-result)
+
+rm -f /tmp/pet-install-result 2>/dev/null
+
+if [ $retval -eq 0 ]; then
+	yad --window-icon=application-pet --fixed --button="OK":0 --info --image="info" --title="PET Installer" --text="The package has been installed:\n$pkg_name\n"
+else
+	yad --window-icon=application-pet --fixed --button="OK":0 --error --image="error" --title="PET Installer" --text="The package has failed to installed:\n$pkg_name\n"
+fi

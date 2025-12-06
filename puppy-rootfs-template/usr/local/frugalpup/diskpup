@@ -1,0 +1,431 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+do_exit() {
+	[ "$VFAT_LIST" ] && [ -e "$VFAT_LIST" ] && rm "$VFAT_LIST"
+	[ "$TMP_LIST" ] && [ -e "$TMP_LIST" ] && rm "$TMP_LIST"
+	[ "$TMP_BLK" ] && [ -e "$TMP_BLK" ] && rm "$TMP_BLK"
+	[ "$CACHE_FN" ] && [ -e "$CACHE_FN" ] && rm "$CACHE_FN"
+	if [ -e "$MNTD_FN" ]; then
+		while IFS='' read ONE_MP; do
+			umount "$ONE_MP" 2>/dev/null
+		done < "$MNTD_FN"
+		rm -f "$MNTD_FN"
+	fi
+	if [ "$1" ]; then
+		yad $YAD_STD_OPTS --title "${Tt}" --width=400 --text-align=center \
+			--text "${MuBig}${1}${MuBe}" \
+			--button=${TbOk}!gtk-ok:0
+	fi
+	exit $2
+}
+
+error_exit() {
+	do_exit "$1" 1
+}
+
+normal_exit() {
+	do_exit "$1" 0
+}
+
+# check Grub2 uefi and mbr
+grub2_chk() {
+	EFI_TAR=''
+	if [ -s "$PUP_GRUB/$EFI_FN" ]; then
+		EFI_TAR="$PUP_GRUB/$EFI_FN"
+	else
+		[ -s "$EXE_DIR/$EFI_FN" ] && EFI_TAR="$EXE_DIR/$EFI_FN"
+	fi
+	[ "$EFI_TAR" ] || error_exit "$(gettext 'grub2-efi support missing')"
+	MBR_TAR=''
+	if [ -s "$PUP_GRUB/$MBR_FN" ]; then
+		MBR_TAR="$PUP_GRUB/$MBR_FN"
+	else
+		[ -s "$EXE_DIR/$MBR_FN" ] && MBR_TAR="$EXE_DIR/$MBR_FN"
+	fi
+	[ "$MBR_TAR" ] || error_exit "$(gettext 'grub2-mbr support missing')"
+}
+
+boot_part_chk() {
+	VFAT_LIST="/tmp/${myName}_$$_vfat_list.txt"
+	[ -f "$VFAT_LIST" ] && rm "$VFAT_LIST"
+	grep 'vfat' "$TMP_BLK" |
+	while IFS='' read ONE_LINE; do
+		DRV="${ONE_LINE%%:*}"; DRV="${DRV#/dev/}"
+		DRV_ONE="${DRV%[0-9]}"; DRV_ONE="${DRV_ONE%[0-9]}"; DRV_ONE="${DRV_ONE%[0-9]}"
+		DRV_ONE="${DRV_ONE}1"
+		[ "$DRV" = "$DRV_ONE" ] || continue
+		LAB="${ONE_LINE#*LABEL=\"}"
+		[ "${LAB:0:1}" = "/" ] && LAB='' || LAB="${LAB%%\"*}"
+		echo "$DRV" >> "$VFAT_LIST"
+		echo "$LAB" >> "$VFAT_LIST"
+	done
+	[ -s "$VFAT_LIST" ] || error_exit "$(gettext 'No suitable fat32 partitions found')
+$(gettext 'They must be the first partition on the disk')"
+}
+
+get_boot_type() {
+	BOOT_TYPE='both'
+	get_device "$DEST_PART"
+	if [ "$get_device_RET" ]; then
+		[ "$(parted "/dev/$get_device_RET" print 2>/dev/null | grep 'gpt')" ] && BOOT_TYPE='uefi'
+	fi
+}
+
+get_boot_part() {
+	Tm0="$(gettext 'Boot partition')"
+	Tm1="$(gettext 'This script updates the selected boot partition,\nwith files needed to boot the Puppy frugal install(s) in,')"
+	Tm3="$(gettext 'May overwrite some boot files on the selected partition.')"
+	Tm4="$(gettext 'Select a fat32 boot partition:')"
+	DEST_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=250 \
+		--text "${Tm1}
+${MuPurple}${SFS_PART}:${SFS_DIR}${MuEnd}.
+
+${MuRed}${Tm3}${MuEnd}
+
+${Tm4}" \
+		--list --print-column=1 --column=Partition --column=Label < $VFAT_LIST \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	rm "$VFAT_LIST"
+	[ "$DEST_SPEC" ] || error_exit "$(gettext 'No partition selected')"
+	DEST_PART="${DEST_SPEC%%|*}"
+
+	ensure_mounted "$DEST_PART"
+	[ "$ensure_mounted_DID" ] && echo "$ensure_mounted_MP" >> "$MNTD_FN"
+	[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$DEST_PART\""
+	DEST_MP="$ensure_mounted_MP"
+
+	if [ -d "$DEST_MP/EFI" ]; then
+		if [ -d "$DEST_MP/EFI/Puppy" ]; then
+			HAVE_OTHER='Puppy'
+		else
+			find "$DEST_MP/EFI" -maxdepth 1 -mindepth 1 -type d > "$TMP_LIST"
+			while read ONE_DIR; do
+				DIR_FN="${ONE_DIR#${DEST_MP}/EFI/}"
+				DIR_FN_UP="$(echo -n "$DIR_FN" | tr '[:lower:]' '[:upper:]')"
+				case "$DIR_FN_UP" in
+					BOOT) ;;
+					*) HAVE_OTHER="$DIR_FN"; break ;;
+				esac
+			done < "$TMP_LIST"
+			[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+		fi
+	fi
+
+	if [ "$HAVE_OTHER" ]; then
+		EFI_MSG="$(gettext 'For UEFI dual-booting to work, this Puppy Grub2 install needs to be registerd with the uefi/BIOS on this machine.')
+$(printf "$(gettext 'Unfortunately this Puppy does not fully support the %s utility required to do this.')" "${MuPurple}efibootmgr${MuEnd}")
+$(printf "$(gettext 'The install needs to be done with a Puppy that has full %s support.')" "${MuPurple}efibootmgr${MuEnd}")
+$(gettext '64bit Puppies built after 2020, would be a good place to start.')
+
+$(gettext 'You can still proceed with the install, which will copy the files into place, but the machines boot order will remain unchanged.')
+
+"
+		type efibootmgr > /dev/null 2>&1
+		if [ $? -eq 0 ]; then
+			efibootmgr > /dev/null 2>&1
+			[ $? -eq 0 ] && EFI_MSG=''
+		fi
+		if [ "$HAVE_OTHER" = "Puppy" ]; then
+			Tm1="$(printf "$(gettext 'The %s partition already contains a %s UEFI boot.')" "${MuPurple}${DEST_PART}${MuEnd}" "${MuPurple}${HAVE_OTHER}${MuEnd}")"
+			Tm2="$(printf "$(gettext 'Continuing with this install of Grub2 will clobber the current %s Grub2 install.')" "${MuPurple}${HAVE_OTHER}${MuEnd}")"
+			Tm3="$(gettext 'If you are sure you want to replace the current %s Grub2 install,\nclick %s to continue, otherwise click %s, to abort this install.')"
+			Tm4="$(printf "${Tm3}" "${MuPurple}${HAVE_OTHER}${MuEnd}" "${MuBlue}${TbOk}${MuEnd}" "${MuBlue}${TbCancel}${MuEnd}")"
+		else
+			Tm1="$(printf "$(gettext 'The %s partition already contains a %s UEFI boot.')" "${MuPurple}${DEST_PART}${MuEnd}" "${MuPurple}${HAVE_OTHER}${MuEnd}")"
+			Tm2="$(printf "$(gettext 'Grub2 will be installed in a way that enables it to dual-boot with the %s boot facility rather than damaging it.')" "${MuPurple}${HAVE_OTHER}${MuEnd}")"
+			Tm3="$(gettext "If you don't have a good backup of %s,\nyou might consider clicking %s, to abort this install.")"
+			Tm4="$(printf "${Tm3}" "${MuPurple}${DEST_PART}${MuEnd}" "${MuBlue}${TbCancel}${MuEnd}")"
+		fi
+		yad $YAD_STD_OPTS --title "${Tt}" --width=600 \
+			--text "${Tm1}
+${Tm2}
+
+${EFI_MSG}${Tm4}" \
+			--button=${TbOk}!gtk-ok:0
+		[ $? -eq 0 ] || error_exit
+	fi
+}
+
+get_install_location() {
+	TMP_LIST="/tmp/${myName}_$$_tmp_list.txt"
+	[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+	while read ONE_LINE; do
+		TYPE="${ONE_LINE#*TYPE=\"}"
+		[ "${TYPE:0:1}" = "/" ] && TYPE='' || TYPE="${TYPE%%\"*}"
+		[ "$TYPE" = "crypto_LUKS" ] && continue
+		get_part_fs_class "$TYPE"
+		[ "$get_part_fs_class_RET" = "cd" ] && continue
+		DRV="${ONE_LINE%%:*}"; DRV="${DRV#/dev/}"
+		LAB="${ONE_LINE#*LABEL=\"}"
+		[ "${LAB:0:1}" = "/" ] && LAB='' || LAB="${LAB%%\"*}"
+		[ "$LAB" = "System Reserved" ] && continue
+		[ "$LAB" = "" -a "$TYPE" = "ntfs" ] && continue
+		echo "$DRV" >> "$TMP_LIST"
+		if [ "$TYPE" = 'vfat' ]; then
+			echo "fat32" >> "$TMP_LIST"
+		else
+			echo "$TYPE" >> "$TMP_LIST"
+		fi
+		echo "$LAB" >> "$TMP_LIST"
+	done < "$TMP_BLK"
+
+	if [ -s "$TMP_LIST" ]; then
+		Tm0="$(gettext 'Puppy partition')"
+		Tm1="$(gettext 'Please select a partition to contain Puppy:')"
+		SFS_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=220 \
+			--text "${Tm1}" \
+			--list --column=Partition --column=FileSystem --column=Label < $TMP_LIST \
+			--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		rm "$TMP_LIST"
+		if [ "$SFS_SPEC" ]; then
+			SFS_PART="${SFS_SPEC%%|*}"
+		else
+			error_exit "$(gettext 'No partition selected')"
+		fi
+	else
+		error_exit "$(gettext 'No suitable partitions found')"
+	fi
+
+	ensure_mounted "$SFS_PART"
+	[ "$ensure_mounted_DID" ] && echo "$ensure_mounted_MP" >> "$MNTD_FN"
+	[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SFS_PART\""
+	SFS_MP="$ensure_mounted_MP"
+
+	Tm0="$(gettext 'Puppy directory')"
+	Tm1="$(printf "$(gettext '%s is mounted at %s.')" "${MuPurple}${SFS_PART}${MuEnd}" "${MuPurple}${SFS_MP}${MuEnd}")"
+	Tm2="$(gettext 'Select a directory to contain the Puppy frugal install files.')"
+	Tm3="$(gettext 'Create Folder')"
+	Tm4="$(printf "$(gettext 'Note:') $(gettext 'If you use the %s button,')" "${MuBlue}${Tm3}${MuEnd}")"
+	Tm5="$(gettext 'Enter')"
+	Tm6="$(printf "$(gettext 'you need to hit the %s key after typing the new folder name.')" "${MuPurple}${Tm5}${MuEnd}")"
+	INSTL_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--file --directory --width=600 --height=500 \
+		--text " ${Tm1}
+
+ ${Tm2}
+
+ ${Tm4}
+ ${Tm6}
+" \
+		--filename="${SFS_MP}${SFS_DIR%/*}/" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+#	[ -d "$INSTL_DIR" ] || error_exit "$(gettext 'No install directory selected')"
+
+	DIR_MP="$(stat -Lc %m "$INSTL_DIR")"
+	if [ "$DIR_MP" != "$SFS_MP" ]; then
+		SFS_PART="$(grep -m1 "$DIR_MP" /proc/mounts | cut -f1 -d' ')"
+		SFS_PART="${SFS_PART#/dev/}"
+		SFS_MP="$DIR_MP"
+	fi
+
+	INSTALL_DIR="$(realpath "$INSTL_DIR")"
+	if [ "$SRC_TYPE" = "directory" ]; then
+		#check that INSTALL_DIR is not the same as SRC_DIR
+		[ "$INSTALL_DIR" = "$(realpath "$SRC_DIR")" ] && error_exit "$(gettext 'Source directory:')
+  ${MuPurple}${SRC_DIR}${MuEnd}
+$(gettext 'Destination directory:')
+  ${MuPurple}${INSTL_DIR}${MuEnd}
+$(gettext 'These are the same directory')"
+	fi
+	SFS_DIR="${INSTALL_DIR#${SFS_MP}}"
+
+	AUTOSAVE=''
+	get_part_fs "$SFS_PART"
+	if [ "$get_part_fs_RET" ]; then
+#		if [ "$get_part_fs_RET" = 'vfat' -o "$get_part_fs_RET" =  'exfat' ]; then
+		if [ "$get_part_fs_RET" = 'vfat' ]; then
+			AUTOSAVE='yes'
+		else
+			get_part_fs_class "$get_part_fs_RET"
+			[ "$get_part_fs_class_RET" = 'linux' ] && AUTOSAVE='yes'
+		fi
+	fi
+}
+
+get_source_location() {
+	Tm0="$(gettext 'Source type')"
+	Tm1="$(gettext 'Select the source type:')"
+	Tm2="$(gettext "A .iso file")"
+	Tm3="$(gettext "A .zip file")"
+	Tm4="$(gettext 'A local directory')"
+	Tm5="$(gettext 'This Puppy')"
+	Tm6="$(gettext 'DiskPup installs a single Puppy.')"
+	Tm7="$(gettext 'A directory is required to contain Puppy.')"
+	Tm8="$(printf "$(gettext 'A %s partition is required for Grub2.')" "${MuPurple}fat32${MuEnd}")"
+	Tm9="$(printf "$(gettext "The %s partition must be the first on it's drive.")" "${MuPurple}fat32${MuEnd}")"
+	SRC_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=250 \
+		--text "${Tm6}
+
+${Tm7}
+${Tm8}
+${Tm9}
+ 
+${Tm1}" \
+		--list --no-headers --print-column=2 --radiolist --column=:RD --column=:TXT --column=:TXT \
+		TRUE 'iso' "  ${Tm2}" FALSE 'zip' "  ${Tm3}" FALSE 'directory' "  ${Tm4}" FALSE 'this' "  ${Tm5}" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	SRC_TYPE="${SRC_SPEC%%|*}"
+	SRC_DIR=''; SRC_FN=''
+	if [ "$SRC_TYPE" = "this" ]; then
+		. /etc/rc.d/PUPSTATE
+		#mainly to catch unplugged usb devices, but doing it for all
+		for ONE_PARM in $(head -n1 /proc/cmdline); do
+			case $ONE_PARM in
+				psfspart=*) PSFSID="${ONE_PARM#*=}"; break ;;
+				pdrv=*) PSFSID="${ONE_PARM#*=}"; break ;;
+				pupsfs=*) PSFSID="${ONE_PARM#*=}"; break ;;
+				pdev1=*) PSFSID="${ONE_PARM#*=}"; break ;;
+			esac
+		done
+		if [ "$PSFSID" ]; then
+			ID_PART="$(grep "=\"${PSFSID}\"" "$TMP_BLK" | cut -f1 -d':')"
+			[ "$ID_PART" ] || error_exit "$(gettext 'Puppy install partition is not available')
+$(gettext 'Probably due to unplugged usb boot device')"
+			SRC_PART="${ID_PART#/dev/}"
+		else
+			SRC_PART="${PUPSFS%%,*}"
+		fi
+		ensure_mounted "$SRC_PART"
+		[ "$ensure_mounted_DID" ] && echo "$ensure_mounted_MP" >> "$MNTD_FN"
+		[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SRC_PART\""
+		SRC_MP="$ensure_mounted_MP"
+		SFS_FN="${SRC_MP}${PUPSFS##*,}"
+		if [ -f "$SFS_FN" ]; then
+			SRC_DIR="${SFS_FN%/*}"
+			SRC_TYPE='directory'
+		else
+			error_exit "$(printf "$(gettext "Puppy file \"%s\" not found")" "$SFS_FN")"
+		fi
+	elif [ "$SRC_TYPE" = "directory" ]; then
+		Tm0="$(gettext 'Source directory')"
+		Tm1="$(gettext 'Select the directory containing Puppy files.')"
+		SRC_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+			--file --directory --width=600 --height=460 \
+			--text " ${Tm1}" \
+			--filename="/mnt/" \
+			--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		SFS_FN="$(find "$SRC_DIR" -maxdepth 1 -type f -name 'puppy_*.sfs')"
+		[ "$SFS_FN" ] || error_exit "$(gettext 'No Puppy files found in') \"$SRC_DIR\""
+	else
+		Tm0="$(gettext 'Source file')"
+		Tm1="$(printf "$(gettext 'Select the %s file containing Puppy files.')" "$SRC_TYPE")"
+		SRC_FN="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+			--file --file-filter "$SRC_TYPE files | *.$SRC_TYPE" --width=600 --height=460 \
+			--text " ${Tm1}" \
+			--filename="$HOME/" \
+			--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+		[ $? -eq 0 ] || error_exit
+		[ -d "$SRC_FN" ] && error_exit "$(printf "$(gettext 'No %s file selected')" "$SRC_TYPE")"
+		[ "${SRC_FN##*.}" = "$SRC_TYPE" ] || error_exit "$(printf "$(gettext 'No %s file selected')" "$SRC_TYPE")"
+	fi
+}
+
+confirm_choices() {
+	if [ "$SRC_FN" ]; then
+		SRC_DISP="$SRC_FN"
+	else
+		SRC_DISP="$SRC_DIR"
+	fi
+	if [ "$BOOT_TYPE" = "both" ]; then
+		TYPE_DISP="Supporting ${MuPurple}uefi${MuEnd} and ${MuPurple}mbr${MuEnd} boots."
+	else
+		TYPE_DISP="Supporting ${MuPurple}uefi${MuEnd} boots."
+	fi
+	if [ "$SFS_DIR" ]; then
+		SFS_DISP="$SFS_PART:$SFS_DIR"
+	else
+		SFS_DISP="$SFS_PART"
+	fi
+	Tm0="$(gettext 'confirm')"
+	Tm1="$(gettext 'About to install Puppy files from')"
+	Tm2="$(printf "$(gettext 'into %s.')" "${MuPurple}${SFS_DISP}${MuEnd}")"
+	Tm3="$(printf "$(gettext 'And install Grub2 boot files into %s.')" "${MuPurple}${DEST_PART}${MuEnd}")"
+	Tm4="$(printf "$(gettext 'Click %s to continue.')" "${MuBlue}${TbOk}${MuEnd}")"
+	yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--text "${Tm1}
+${MuPurple}${SRC_DISP}${MuEnd}
+${Tm2}
+
+${Tm3}
+${TYPE_DISP}
+
+${Tm4}" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0
+	[ $? -eq 0 ] || error_exit
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+Tt="${TnDisk} ${TnVer}"
+
+MNTD_FN="/tmp/frugalpup_$$_did_mount.txt"
+[ -f "$MNTD_FN" ] && rm -f "$MNTD_FN"
+
+DRV_NAME=''
+BOOT_TYPE=''
+SRC_TYPE=''
+SRC_DIR=''
+SRC_PART=''
+HAVE_OTHER=''
+
+grub2_chk
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext 'File %s not found')" "${MuPurple}${UTILS_DIR}/functions_part${MuEnd}")"
+. "$UTILS_DIR/functions_part"
+
+TMP_BLK="/tmp/${myName}_$$_blk_list.txt"
+busybox blkid | grep -v 'squashfs' | grep -v 'swap' | grep -v 'zram' | sort > "$TMP_BLK"
+
+boot_part_chk
+
+get_source_location
+get_install_location
+
+get_boot_part
+get_boot_type
+
+confirm_choices
+
+SFS_NO_NUM="${SFS_PART%[0-9]}"; SFS_NO_NUM="${SFS_NO_NUM%[0-9]}"; SFS_NO_NUM="${SFS_NO_NUM%[0-9]}"
+
+[ -f "$CONFIG_FN" ] && . "$CONFIG_FN"
+
+echo "SRC_TYPE='$SRC_TYPE'" > "$CACHE_FN"
+echo "SRC_FN='$SRC_FN'" >> "$CACHE_FN"
+echo "SRC_DIR='$SRC_DIR'" >> "$CACHE_FN"
+echo "SFS_PART='$SFS_PART'" >> "$CACHE_FN"
+echo "SFS_DIR='$SFS_DIR'" >> "$CACHE_FN"
+echo "XTRA_PARMS='$minPARMS'" >> "$CACHE_FN"
+echo "SAVE_MARK=${SFS_PART#${SFS_NO_NUM}}" >> "$CACHE_FN"
+[ "$AUTOSAVE" ] && echo "AUTOSAVE='yes'" >> "$CACHE_FN"
+ERR_MSG="$("$EXE_DIR/frugalpup-dopupdir")"
+[ $? -eq 0 ] || error_exit "frugalpup-dopupdir: $ERR_MSG"
+
+echo "SFS_PART='$SFS_PART'" > "$CACHE_FN"
+echo "SFS_DIR='$SFS_DIR'" >> "$CACHE_FN"
+echo "DEST_PART='$DEST_PART'" >> "$CACHE_FN"
+echo "BOOT_TYPE='$BOOT_TYPE'" >> "$CACHE_FN"
+echo "HAVE_OTHER='$HAVE_OTHER'" >> "$CACHE_FN"
+ERR_MSG="$("$EXE_DIR/frugalpup-dobootpart")"
+[ $? -eq 0 ] || error_exit "frugalpup-dobootpart: $ERR_MSG"
+
+if [ "$SFS_DIR" ]; then
+	EX_SFS="$SFS_PART:$SFS_DIR"
+else
+	EX_SFS="$SFS_PART"
+fi
+normal_exit "$(gettext 'Puppy installed in') ${MuPurple}${EX_SFS}${MuEnd}
+$(gettext 'and booting from') ${MuPurple}${DEST_PART}${MuEnd}"

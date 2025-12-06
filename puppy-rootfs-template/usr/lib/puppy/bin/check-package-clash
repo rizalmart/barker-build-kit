@@ -1,0 +1,57 @@
+#!/bin/sh
+#List packages will clashing files
+#written by mistfire
+
+[ -e /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+if [ "$PUPMODE" == "" ] || [ "$PUPMODE" == "2" ]; then
+ PREROOT=""
+else
+ PREROOT="/initrd/pup_ro2"
+fi
+
+mkdir -p /tmp/pkg-fileclashes 2>/dev/null
+
+rm -f /tmp/pkg-fileclashes/* 2>/dev/null
+
+echo "" > /tmp/pkg-maindb.txt
+echo "building file database..."
+
+for fle1 in $(ls -1 $PREROOT/var/packages/builtin_files | grep -v "^aaa_" | tr '\n' ' ')
+do
+
+ cat $PREROOT/var/packages/builtin_files/$fle1 | grep -E 'bin|lib|\.so$' | sed -e 's#^#'$fle1'|#' >> /tmp/pkg-maindb.txt
+
+done
+
+
+for fle1 in $(ls -1 $PREROOT/var/packages/builtin_files | grep -v "^aaa_" | tr '\n' ' ')
+do
+
+ if [ -e $PREROOT/var/packages/package-specs/${fle1}.specs ]; then
+
+  echo "analyzing $fle1 ..."
+  
+  fleptrn="$(echo "$fle1" | sed -e "s#\/#\\\/#" -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#")"
+
+  cat $PREROOT/var/packages/builtin_files/$fle1 | grep -E 'bin|lib|\.so$' > /tmp/sample-file-list
+ 
+  while IFS= read -r line
+  do
+    lptrn="$(echo "$line" | sed -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#" -e "s#\/#\\\/#")"
+    if [ -L $line ] || [ -f $line ]; then
+     lfound="$(cat /tmp/pkg-maindb.txt | grep -E "\|$lptrn\$" | grep -vE "^$fleptrn\|")"
+     if [ "$lfound" != "" ]; then
+      MPKG="$(echo $lfound | cut -f 1 -d '|')"
+      if [ -e $PREROOT/var/packages/package-specs/$MPKG.specs ]; then
+       [ "$MPKG" != "$fle1" ] && echo "$lfound" >> /tmp/pkg-fileclashes/$fle1
+      fi
+     fi
+    fi
+  done < /tmp/sample-file-list
+
+ fi
+
+done
+
+echo "analysis complete see /tmp/pkg-fileclashes"

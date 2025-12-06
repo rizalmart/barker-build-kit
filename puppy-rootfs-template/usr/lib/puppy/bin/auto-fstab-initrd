@@ -1,0 +1,37 @@
+#!/bin/bash
+
+export INITRD_FLD="/initrd"
+
+[ -L /initrd ] && export INITRD_FLD=$(readlink /initrd 2>/dev/null)
+
+
+# Find all mount points containing "/initrd" in their path using mount and grep
+MOUNT_POINTS=$(mount | grep "${INITRD_FLD}" | awk '{print $3}')
+
+# Check if any mount points were found
+if [[ -z "$MOUNT_POINTS" ]]; then
+    echo "No mount points containing '/initrd' found."
+    exit 0
+fi
+
+sed -i -e '/\/'${INITRD_FLD}'\//d' /etc/fstab 
+
+# Loop through each mount point and add an entry to /etc/fstab
+for MOUNT_POINT in $MOUNT_POINTS; do
+    
+    # Get the device and filesystem type for the mount point
+    DEVICE=$(mount | grep -w "$MOUNT_POINT" | awk '{print $1}')
+    FSTYPE=$(mount | grep -w "$MOUNT_POINT" | awk '{print $5}')
+
+    # Check if the mount point is already in /etc/fstab
+    if grep -q "$MOUNT_POINT" /etc/fstab; then
+        echo "Entry for $MOUNT_POINT already exists in /etc/fstab. Skipping."
+    else
+        # Add the entry to /etc/fstab with the x-systemd.requires=/ option
+        echo "Adding entry for $MOUNT_POINT to /etc/fstab..."
+        echo -e "$DEVICE\t$MOUNT_POINT\t$FSTYPE\tdefaults,x-systemd.requires=/\t0\t2" | sudo tee -a /etc/fstab > /dev/null
+    fi
+    
+done
+
+echo "Done. Please verify the changes in /etc/fstab."

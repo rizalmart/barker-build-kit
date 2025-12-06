@@ -1,0 +1,19 @@
+#!/bin/bash
+
+ISAUFS="$(mount | grep " on / " | cut -f 5 -d ' ' | grep "aufs")"
+
+[ "$ISAUFS" == "" ] && exit
+
+for fld in bin lib lib64 opt usr sbin var
+do
+  
+    for fld2 in pup_rw pup_ro1
+    do
+	  if [ -d /initrd/${fld2}/${fld} ]; then
+		find /initrd/${fld2}/${fld}/ -type f -name ".wh.*" | grep -v ".wh..wh." | xargs -i rm -f '{}'
+	  fi
+	done
+  
+done
+
+busybox mount -t aufs -o remount,udba=reval unionfs /

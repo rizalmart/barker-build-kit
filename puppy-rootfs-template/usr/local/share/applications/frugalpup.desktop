@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=FrugalPup - flexible frugal installer
+Comment=flexible frugal installer
+Exec=frugalpup
+Icon=gnibbles
+Terminal=false
+Type=Application
+Categories=X-Setup-installation;
+GenericName=FrugalPup

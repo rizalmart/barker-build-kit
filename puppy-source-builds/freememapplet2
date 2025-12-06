@@ -1,0 +1,25 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# freememapplet2 (master branch)
+wget -O freememapplet2.zip \
+  https://github.com/rizalmart/freememapplet2/archive/refs/heads/main.zip
+
+echo "Extracting..."
+unzip freememapplet2.zip
+echo "Building freememapplet2..."
+cd "freememapplet2-main"
+chmod +x ./compile
+./compile
+cp -f ./freememapplet_tray /usr/local/bin/freememapplet_tray
+
+cd /tmp
+
+rm -rf ${WORKDIR}

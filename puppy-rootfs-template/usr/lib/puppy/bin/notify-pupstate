@@ -1,0 +1,30 @@
+#!/bin/sh
+
+. /etc/rc.d/PUPSTATE
+
+h1="PUPMODE NOTICE"
+
+if [ $PUPMODE -eq 5 ]; then
+ 
+ if [ -e /var/run/shutdownconfig_results ]; then
+  msg1="The internal storage was RAM.\nIt will save on proper shutdown.\nStill need to save important files to storage device."
+ else
+  msg1="The internal storage was RAM.\nSave important files to storage device."
+ fi
+elif [ $PUPMODE -eq 6 ]; then
+ msg1="The internal storage was RAM.\nSave important files to storage device."
+elif [ $PUPMODE -eq 3 ] || [ $PUPMODE -eq 7 ] || [ $PUPMODE -eq 13 ]; then
+ msg1="New/modified files was on the RAM.\nDon't unplug the save device."
+elif [ $PUPMODE -eq 77 ]; then
+ msg1="Running multisession mode.\nSave important files to storage device."
+else
+ exit
+fi
+
+if [ "$(which notify-send)" != "" ]; then
+ sleep 5
+ notify-send -i info -t 8000 "$h1" "$msg1"
+else
+ 
+ yaf-splash -timeout 5 -placement top -text "$h1: $(echo $msg1 | sed -e 's#\\n# #g')" -bg yellow
+fi

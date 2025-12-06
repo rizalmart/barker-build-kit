@@ -1,0 +1,32 @@
+#!/bin/sh
+
+# Default mode
+mode=""
+
+# Try D-Bus query to org.freedesktop.login1 (supported by both systemd-logind and elogind)
+info=$(dbus-send --system \
+  --print-reply \
+  --dest=org.freedesktop.login1 \
+  /org/freedesktop/login1 \
+  org.freedesktop.DBus.Properties.Get \
+  string:"org.freedesktop.login1.Manager" string:"ScheduledShutdown" 2>/dev/null)
+
+# Extract shutdown mode from D-Bus result
+if echo "$info" | grep -q 'string'; then
+    mode=$(echo "$info" | grep string | awk '{print $2}' | tr -d '"')
+fi
+
+# If D-Bus didn't return anything useful and systemd file exists, use that
+if [ -z "$mode" ] && [ -f /run/systemd/shutdown/scheduled ]; then
+    mode=$(grep '^MODE=' /run/systemd/shutdown/scheduled | cut -d= -f2)
+fi
+
+# Respond based on mode
+case "$mode" in
+    reboot|poweroff)
+        exec pre-shutdown
+        ;;
+    *)
+        echo $mode
+        ;;
+esac

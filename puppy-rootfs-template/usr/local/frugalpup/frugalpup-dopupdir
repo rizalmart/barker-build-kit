@@ -1,0 +1,212 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+do_exit() {
+	[ "$SAVE_MTD" ] && umount "$SAVE_MP" 2>/dev/null
+	[ "$DEST_MTD" ] && umount "$DEST_MP" 2>/dev/null
+	[ "$XPID" ] && kill -9 $XPID 2>/dev/null
+	[ "$1" ] && echo "${1}"
+	exit $2
+}
+
+error_exit() {
+	do_exit "$1" 1
+}
+
+normal_exit() {
+	do_exit "$1" 0
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext 'File %s not found')" "${MuPurple}$UTILS_DIR/functions_part${MuEnd}")"
+. "$UTILS_DIR/functions_part"
+
+SRC_TYPE=''; SRC_FN=''; SRC_DIR=''
+SFS_PART=''; SFS_DIR=''; SAVE_PART=''; SAVE_DIR=''; AUTOSAVE=''
+XTRA_PARMS=''; PFIX_PARMS=''
+
+[ "$CACHE_FN" ] && [ -f "$CACHE_FN" ] && . "$CACHE_FN"
+
+[ "$SRC_TYPE" ] || error_exit "$(gettext 'No source type specified')"
+if [ "$SRC_FN" = "" ]; then
+	if [ "$SRC_DIR" = "" ]; then
+		error_exit "$(gettext 'No source specified')"
+	fi
+fi
+[ "$SFS_PART" ] || error_exit "$(gettext 'No install partition specified')"
+if [ "$SFS_DIR" ]; then
+	DEST_DISP="${SFS_PART}:${SFS_DIR}"
+else
+	DEST_DISP="$SFS_PART"
+fi
+gtkdialog-splash -bg yellow -close box -text "$(printf "$(gettext 'Copying Puppy files to %s')" "$DEST_DISP")" &
+XPID=$!
+
+ensure_mounted "$SFS_PART"
+DEST_MP="$ensure_mounted_MP"
+DEST_MTD="$ensure_mounted_DID"
+[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SFS_PART\""
+if [ "$SFS_DIR" ]; then
+	DEST_DIR="${DEST_MP}${SFS_DIR}"
+	[ -d "$DEST_DIR" ] || mkdir -p "$DEST_DIR"
+else
+	DEST_DIR="$DEST_MP"
+fi
+
+if [ "$SRC_FN" ]; then
+	case $SRC_TYPE in
+		iso)
+			TMP_MP=/tmp/ISO$$
+			[ -d "$TMP_MP" ] || mkdir -p "$TMP_MP"
+			mount -o loop,ro "$SRC_FN" "$TMP_MP"
+			[ $? -eq 0 ] || error_exit "$(gettext 'Could not mount') \"$SRC_FN\""
+			SRC_DIR="$TMP_MP"
+			;;
+		zip)
+			PUP_SFS="$(unzip -Z1 "$SRC_FN" | grep -v '/$' | grep '.sfs$' | grep 'puppy_')"
+			case $PUP_SFS in
+				*/*) PUP_DIR="${PUP_SFS%/*}/" ;;
+				*) PUP_DIR='' ;;
+			esac
+			unzip -u -o -j "$SRC_FN" "${PUP_DIR}*" -d "$DEST_DIR"
+			[ -e "$DEST_DIR/SAVEMARK" ] && rm "$DEST_DIR/SAVEMARK"
+			[ -e "$DEST_DIR/SAVESPEC" ] && rm "$DEST_DIR/SAVESPEC"
+			[ -e "$DEST_DIR/AUTOSAVE" ] && rm "$DEST_DIR/AUTOSAVE"
+			;;
+	esac
+fi
+
+if [ "$SRC_DIR" ]; then
+	# copy kernel and initramfs (and release_initrd.gz)
+	# copy *sfs
+	fileList="$SRC_DIR/vmlinuz
+$SRC_DIR/initrd.gz
+$SRC_DIR/initrd.xz
+$SRC_DIR/local-initrd.gz
+$SRC_DIR/DRV_SPECS
+$SRC_DIR/ucode.cpio
+$(find "$SRC_DIR" -maxdepth 1 -name '*.sfs' -type f -o -name '*.sfs' -type l)"
+	targetList=''
+	for onePath in $fileList; do
+		[ -e "$onePath" ] || continue
+		if [ -L "$onePath" ]; then
+			oneTarget="$(readlink "$onePath")"
+			case $oneTarget in
+				./*) targetList="$targetList${oneTarget#./}
+" ;;
+				*/*) ;;
+				*) targetList="$targetList$oneTarget
+" ;;
+			esac
+		fi
+		cp -afL "$onePath" "$DEST_DIR"
+	done
+	for oneTarget in $targetList; do
+		[ -e "$DEST_DIR/$oneTarget" ] && rm "$DEST_DIR/$oneTarget"
+	done
+	sync
+	if [ "$TMP_MP" ]; then
+		umount "$TMP_MP"
+		rmdir "$TMP_MP"
+	fi
+fi
+
+type signBinary >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+	signBinary "$DEST_DIR/vmlinuz" >/dev/null 2>&1
+	if [ $? -eq 0 ]; then
+		DEST_Z="$(find $DEST_DIR -mindepth 1 -maxdepth 1 -name 'zdrv_*.sfs')"
+		signModulesSfs -q "$DEST_Z" >/dev/null 2>&1
+	fi
+fi
+
+[ -f "$DEST_DIR/$PARMS_FN" ] && rm "$DEST_DIR/$PARMS_FN"
+
+WOOF_YR=''; SAVESPEC=''
+PUP_SFS="$(find "$DEST_DIR" -mindepth 1 -maxdepth 1 -name 'puppy_*.sfs')"
+if [ "$PUP_SFS" ]; then
+	PUP_MP='/mnt/data'
+	mount -o loop,ro,noatime "$PUP_SFS" "$PUP_MP"
+	if [ $? -eq 0 ]; then
+		. "$PUP_MP/etc/DISTRO_SPECS"
+		WOOF_YR=${BUILD_FROM_WOOF#*;*;}
+		umount "$PUP_MP"
+	fi
+fi
+if [ "$WOOF_YR" ]; then
+	WOOF_YR=${WOOF_YR%%-*}
+	[ "$WOOF_YR" -lt "2021" ] || SAVESPEC='yes'
+fi
+
+if [ "$SAVE_PART" ]; then
+	get_part_id "$SAVE_PART"
+	SAVE_ID="$get_part_id_RET"
+	ensure_mounted "$SAVE_PART"
+	SAVE_MP="$ensure_mounted_MP"
+	SAVE_MTD="$ensure_mounted_DID"
+	[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SAVE_PART\""
+	[ -d "${SAVE_MP}${SAVE_DIR}" ] || mkdir -p "${SAVE_MP}${SAVE_DIR}"
+	if [ "$AUTOSAVE" ]; then
+		touch "${SAVE_MP}${SAVE_DIR}/AUTOSAVE"
+		sync
+	fi
+	if [ "$SAVESPEC" ]; then
+		echo "SS_ID='$SAVE_ID'" > "$DEST_DIR/SAVESPEC"
+		echo "SS_DIR='$SAVE_DIR'" >> "$DEST_DIR/SAVESPEC"
+	else
+		get_device "$SAVE_PART"
+		SAVE_DEV="$get_device_RET"
+		get_device "$SFS_PART"
+		if [ "$SAVE_DEV" = "$get_device_RET" -a "$SAVE_DIR" = "${DEST_DIR#${DEST_MP}}" ]; then
+			SAVE_NO_NUM="${SAVE_PART%[0-9]}"; SAVE_NO_NUM="${SAVE_NO_NUM%[0-9]}"; SAVE_NO_NUM="${SAVE_NO_NUM%[0-9]}"
+			echo "${SAVE_PART#${SAVE_NO_NUM}}" > "$DEST_DIR/SAVEMARK"
+		else
+			echo "PSAVEID='$SAVE_ID'" >> "$DEST_DIR/$PARMS_FN"
+			echo "PSAVEDIR='$SAVE_DIR'" >> "$DEST_DIR/$PARMS_FN"
+		fi
+	fi
+else
+	if [ "$AUTOSAVE" ]; then
+		touch "$DEST_DIR/AUTOSAVE"
+		if [ "$SAVESPEC" ]; then
+			get_part_id "$SFS_PART"
+			echo "# This file, if present, will be used by WoofCE PUPs at boot time." > "$DEST_DIR/SAVESPEC"
+			echo "# It defines the save location for a booting Puppy." >> "$DEST_DIR/SAVESPEC"
+			echo "" >> "$DEST_DIR/SAVESPEC"
+			echo "# Define the label or UUID of the partition containing the save location." >> "$DEST_DIR/SAVESPEC"
+			echo "SS_ID='$get_part_id_RET'" >> "$DEST_DIR/SAVESPEC"
+			echo "# Define the relative path to the directory containing the save location." >> "$DEST_DIR/SAVESPEC"
+			echo "SS_DIR='$SFS_DIR'" >> "$DEST_DIR/SAVESPEC"
+		else
+			SAVE_NO_NUM="${SFS_PART%[0-9]}"; SAVE_NO_NUM="${SAVE_NO_NUM%[0-9]}"; SAVE_NO_NUM="${SAVE_NO_NUM%[0-9]}"
+			echo "${SFS_PART#${SAVE_NO_NUM}}" > "$DEST_DIR/SAVEMARK"
+		fi
+		sync
+	fi
+fi
+
+[ "$XTRA_PARMS" ] && echo "PKNLPARMS='$XTRA_PARMS'" >> "$DEST_DIR/$PARMS_FN"
+[ "$PFIX_PARMS" ] && echo "PFIXPARMS='$PFIX_PARMS'" >> "$DEST_DIR/$PARMS_FN"
+
+sync
+[ "$SAVE_MTD" ] && umount "$SAVE_MP"
+sync
+if [ "$DEST_MTD" ]; then
+	sleep 1
+	umount "$DEST_MP"
+	[ $? -eq 0 ] || { sleep 1; umount "$DEST_MP"; }
+fi
+
+kill -9 $XPID
+
+normal_exit
+
+exit

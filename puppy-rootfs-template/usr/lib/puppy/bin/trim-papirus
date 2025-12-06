@@ -1,0 +1,11 @@
+#!/bin/sh
+
+for fld in Papirus Papirus-Maia Papirus-Light Papirus-Light-Maia Papirus-Dark Papirus-Dark-Maia ePapirus ePapirus-Dark ePapirus-Light
+do
+ if [ -d /usr/share/icons/$fld/22x22 ]; then
+  if [ ! -L /usr/share/icons/$fld/22x22 ]; then
+	rm -rf /usr/share/icons/$fld/22x22
+	ln -sr /usr/share/icons/$fld/24x24 /usr/share/icons/$fld/22x22
+  fi 
+ fi
+done

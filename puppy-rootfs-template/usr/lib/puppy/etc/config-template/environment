@@ -1,0 +1,12 @@
+#
+# This file is parsed by pam_env module
+#
+# Syntax: simple "KEY=VAL" pairs on separate lines
+#
+LC_ALL=C.UTF-8
+LC_CTYPE=C.UTF-8
+LANG=C.UTF-8
+PATH="/usr/lib/puppy/sbin:/usr/lib/puppy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+XDG_DATA_DIRS=/usr/lib/puppy/share:/usr/local/share:/usr/share
+XDG_CONFIG_DIRS=/usr/lib/puppy/etc/xdg:/usr/local/etc/xdg:/etc/xdg
+LD_LIBRARY_PATH=/usr/lib/overrides:/usr/local/lib64:/usr/local/lib/x86_64-linux-gnu:/usr/local/lib:/usr/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib:/usr/local/lib32:/usr/local/libx32:/usr/local/lib/i386-linux-gnu:/usr/lib32:/usr/libx32:/usr/lib/i386-linux-gnu:/lib32:/libx32:/lib/i386-linux-gnu

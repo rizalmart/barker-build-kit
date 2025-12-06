@@ -1,0 +1,61 @@
+#!/bin/sh
+#GUI dialog for saving session at PUPMODE 13
+# --file parameter for saving user response in /tmp/session_ramdisk_result to be read by /etc/rc.d/rc.shutdown
+
+. /etc/rc.d/PUPSTATE
+
+WCOMPOSITOR="$(cat /etc/wayland-compositors.list 2>/dev/null | tr '\n' ' ')"
+
+if [ $PUPMODE -eq 3 ] || [ $PUPMODE -eq 7 ] || [ $PUPMODE -eq 13 ]; then
+ . /etc/eventmanager
+elif [ $PUPMODE -eq 66 ]; then
+ RAMSAVEINTERVAL=''
+ ASKTOSAVE='true'
+else
+ echo "Not PUPMODE 3, 7, 13, or 66"
+ exit 
+fi
+
+[ "$1" == "--file" ] && xMAKE_ANSWER="y"
+
+# if $RAMSAVEINTERVAL > 0, session is saved automatically
+ if [ "$RAMSAVEINTERVAL" ] && [ $RAMSAVEINTERVAL -gt 0 ] ; then
+   RETVAL=0
+ elif [ "$ASKTOSAVE" = "false" ]; then
+   RETVAL=0
+ else
+  
+  if [ "$(busybox pidof -s X Xorg $WCOMPOSITOR 2>/dev/null)" != "" ]; then
+   DLGEXE="Xdialog"
+   [ "$DISPLAY" == "" ] && export DISPLAY=:0
+   [ "$WAYLAND_DISPLAY" == "" ] && export WAYLAND_DISPLAY=wayland-0
+   [ "$XDG_RUNTIME_DIR" == "" ] && export XDG_RUNTIME_DIR=/run/runtime-root
+  else
+   DLGEXE="dialog --ascii-lines"
+  fi
+ 
+  $DLGEXE --title "Save Current Session" --timeout 60 --yesno "$(gettext 'Save session?
+
+Press ENTER key to save session... 
+Or, press TAB then ENTER to not save session... 
+Or, wait 60 seconds to shutdown without saving session...')" 0 0
+   
+   RETVAL=$?
+ 
+ fi
+ 
+ if [ "$xMAKE_ANSWER" != "" ]; then
+  
+  if [ $RETVAL -eq 0 ]; then
+   SAVE_ANSWER="RAMDISK_SAVE_SESSION=1"
+  else
+   SAVE_ANSWER="RAMDISK_SAVE_SESSION=0"
+  fi
+  
+  echo $SAVE_ANSWER > /var/local/savesession_result 
+ 
+ else
+  rm -f /var/local/savesession_result  2>/dev/null
+ fi
+ 
+ exit $RETVAL

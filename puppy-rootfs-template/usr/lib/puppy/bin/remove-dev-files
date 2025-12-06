@@ -1,0 +1,42 @@
+#!/bin/sh
+#remove dev and doc files
+#written by mistfire
+
+rm -rf /usr/include/* 2>/dev/null
+rm -rf /usr/src/* 2>/dev/null
+
+#rm -rf /usr/lib/pkgconfig/* 2>/dev/null
+rm -rf /usr/lib/.build-id 2>/dev/null
+#rm -rf /usr/lib64/pkgconfig/* 2>/dev/null
+rm -rf /usr/lib64/.build-id 2>/dev/null
+
+rm -rf /var/lib/rpm/* 2>/dev/null 
+
+rm -rf /usr/man/* 2>/dev/null
+rm -rf /usr/share/man/* 2>/dev/null
+rm -rf /usr/share/help/* 2>/dev/null
+rm -rf /usr/share/doc/help/* 2>/dev/null
+rm -rf /usr/share/gir-1.0/* 2>/dev/null
+rm -rf /usr/share/gtk-doc/* 2>/dev/null
+rm -rf /usr/share/devhelp/* 2>/dev/null
+rm -rf /usr/share/licenses/* 2>/dev/null
+
+rm -rf /usr/info/*
+
+for fld in /lib /lib64 /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64
+do
+ 
+ for fld2 in i386-linux-gnu x86_64-linux-gnu
+ do
+  if [ -e $fld/$fld2 ]; then
+   find $fld/$fld2 -type f -name "*.la" -exec rm -f '{}' \;
+   find $fld/$fld2 -type f -name "*.a" -exec rm -f '{}' \;
+  fi
+ done
+
+ if [ -e $fld ]; then
+  find $fld -type f -name "*.la" -exec rm -f '{}' \;
+  find $fld -type f -name "*.a" -exec rm -f '{}' \;
+ fi
+ 
+done

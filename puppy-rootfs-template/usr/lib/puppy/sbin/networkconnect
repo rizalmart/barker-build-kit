@@ -1,0 +1,269 @@
+#!/bin/sh
+#Barry Kauler, May 2012, license GPL3 (ref: /usr/share/doc/legal)
+#this code is taken out of /etc/rc.d/rc.sysinit
+#called from /usr/bin/xwin, if file /tmp/simple_network_setup/network_default_reconnect_required_flag exists.
+#that 'flag' file is created in /usr/sbin/hostname-set, if the hostname was changed and the network connection brought down.
+#170309 rerwin: check currently running network manager, in case multiple setups tried; remove pwireless2 test; remove gkdial test.
+#170515 rerwin: add checks for netwiz & sns installed.
+#170717 update ethernet check per quirky's 161215 fix.
+#170724 accommodate absence of a current exec, for default eth0.
+#180104 clear resolv.conf at bootup, to ensure detection of initial change.
+#180112 recode netchoice determination for SNS & netwiz.
+#180919 add peasywifi support.
+#180923 replace specific exec paths with 'which'; move network wizard.
+#181209 add argument, adapt network stats reset moved from rc.sysinit.
+
+#exit
+
+RUN_WPA_SUPPLICANT=0
+
+[ "$(which sys-randomize)" != "" ] && sys-randomize
+
+nm_stop()
+{
+  echo -en "Stopping NetworkManager: "
+  # Shut down any DHCP connections, otherwise the processes will be orphaned
+  # and the connections will not come up when NetworkManager restarts.
+  if ps ax | grep /sbin/dhcpcd | grep -q libexec/nm-dhcp ; then
+    ps ax | grep /sbin/dhcpcd | grep libexec/nm-dhcp | while read line ; do
+      kill -HUP $(echo $line | cut -b 1-5)
+    done
+  fi
+  if ps ax | grep /sbin/dhclient | grep -q /var/lib/NetworkManager ; then
+    ps ax | grep /sbin/dhclient | grep /var/lib/NetworkManager | while read line ; do
+      kill -HUP $(echo $line | cut -b 1-5)
+    done
+  fi
+  local pidlist=`cat $PIDFILE 2>/dev/null`
+  if [ ! -z "$pidlist" ]; then
+    kill $pidlist &>/dev/null
+    sleep 3
+    rm -f $PIDFILE &>/dev/null
+  fi
+  # If wpa_supplicant is running here, it needs to be shut down as well.
+  # Since you're asking for NetworkManager to shut down, we have to assume
+  # that wpa_supplicant was started by it.
+  if [ -r /var/run/wpa_supplicant.pid ]; then
+    kill $(cat /var/run/wpa_supplicant.pid)
+  elif [ -r /run/wpa_supplicant.pid ]; then
+    kill $(cat /run/wpa_supplicant.pid)
+  fi
+  echo "stopped";
+  sleep 3
+}
+
+
+if [ "$1" = '--sysinit' ]; then #181209...
+
+ sleep 5
+ 
+ [ "$(which wlan-state)" != "" ] && wlan-state load
+  
+ ETHERNETDIR=network_ethernet
+ 
+ if [ ! -d /var/local/$ETHERNETDIR ];then
+ 
+  mkdir -p /var/local/$ETHERNETDIR
+  
+  [ -d /var/local/sns -a ! -L /var/local/sns ] && rm -fr /var/local/sns
+ 
+  ln -snf $ETHERNETDIR /var/local/sns #for network_tray
+ 
+ fi
+ 
+ #100814 100903 record cumulative tx/rx, see also network_tray and rc.shutdown...
+ UPDATE_MONTH="$(date +%b%Y)"
+ CURRENT_MONTH="$(cat /var/local/$ETHERNETDIR/current_month 2>/dev/null)"
+ 
+ if [ "$UPDATE_MONTH" != "$CURRENT_MONTH" ];then
+ 
+  echo "$UPDATE_MONTH" > /var/local/$ETHERNETDIR/current_month
+  
+  for ONECOUNT in $ETHERNETDIR pupdial/isp1 pupdial/isp2
+  do
+ 
+   if [ -d /var/local/$ONECOUNT ];then
+    echo -n 0 > /var/local/$ONECOUNT/rx_bytes_month
+    echo -n 0 > /var/local/$ONECOUNT/tx_bytes_month
+   fi
+ 
+  done
+ 
+ fi
+ 
+ unset ETHERNETDIR
+
+ #adjust for possible installation of peasywifi
+ which peasywifi >/dev/null 2>&1 && connectwizard_wrapper peasywifi #180919
+ 
+fi
+
+
+#choose default network tool...
+if [ -f /etc/puppy-default-connect.conf ];then #170309... #170724...
+ . /etc/puppy-default-connect.conf #sets CURRENT_EXEC
+else
+ CURRENT_EXEC='connectwizard' #for this script only, not saved
+fi #170724 end
+
+
+NETCHOICE='connectwizard' #180112
+
+case "$CURRENT_EXEC" in #170309 end
+ nm|network-manager|networkmanager) #180112...
+  NETCHOICE='nm'
+  ;;
+ connman)
+  NETCHOICE='connman'
+ ;;
+ sns) #180112...
+  which sns >/dev/null 2>&1 \
+   && [ -s /etc/simple_network_setup/connections ] \
+   && NETCHOICE='sns'
+  ;;
+ peasywifi) #180919...
+  which peasywifi >/dev/null 2>&1 \
+   && ( [ "`ls -1 /etc/pwf/wifi 2>/dev/null`" ] \
+    || [ "`ls -1 /etc/pwf/ethernet 2>/dev/null`" ] ) \
+   && NETCHOICE='peasywifi'  ;;
+ net-setup.sh)
+  which net-setup.sh >/dev/null 2>&1 \
+   && [ "`ls -1 /etc/network-wizard/network/interfaces 2>/dev/null`" ] \
+   && NETCHOICE='net-setup.sh'
+  ;; #180112 end
+ connectwizard|frisbee) #try determine which tool was used to setup networking... 101007 160609...
+  if which frisbee >/dev/null 2>&1 && frisbee --test_active; then #130104
+   NETCHOICE='frisbee' #130104
+  elif which peasywifi >/dev/null 2>&1 \
+    && ( [ "`ls -1 /etc/pwf/wifi 2>/dev/null`" ] \
+     || [ "`ls -1 /etc/pwf/ethernet 2>/dev/null`" ] );then #180919...
+   NETCHOICE='peasywifi'
+   connectwizard_wrapper peasywifi
+  elif which sns >/dev/null 2>&1 \
+   && [ -s /etc/simple_network_setup/connections ];then #100306 ...160609 170515
+   NETCHOICE='sns'
+  elif which net-setup.sh >/dev/null 2>&1 \
+   && [ "`ls -1 /etc/network-wizard/network/interfaces 2>/dev/null`" ];then #170515
+   NETCHOICE='net-setup.sh'
+  fi
+  ;;
+esac
+
+if [ ! -f /tmp/.initial_resolv.conf_cleared ];then #180104...
+ echo -n '' > /etc/resolv.conf
+ touch /tmp/.initial_resolv.conf_cleared
+fi
+
+#echo "Setting up interface lo..."
+ifconfig lo 127.0.0.1
+route add -net 127.0.0.0 netmask 255.0.0.0 lo
+
+case $NETCHOICE in
+ nm) #180919
+  
+  if [ "`pgrep dbus-daemon`" = "" ]; then
+    echo "D-BUS must be running to start NetworkManager"
+    exit
+  fi
+  
+  if [ "$(which NetworkManager)" != "" ]; then
+   NM_BIN="$(which NetworkManager)"
+  else
+   echo "Network Manager not installed"
+   exit
+  fi
+  
+  [ "$(pidof NetworkManager)" != "" ] && nm_stop
+  
+  if [ "$RUN_WPA_SUPPLICANT" == "1" ]; then
+  
+     if [ "$(ls /sys/class/net 2>/dev/null | grep -m1 -E 'wlan*|wlp*|wlx*')" != "" ]; then
+	
+		if [ "$(pidof wpa_supplicant)" != "" ]; then
+		 wpa_cli terminate
+		 [ "$(pidof wpa_supplicant)" != "" ] && killall wpa_supplicant
+		fi
+		
+		wpa_supplicant -u &
+	
+	 fi
+	  
+  fi
+  
+  PIDFILE=/var/run/NetworkManager/NetworkManager.pid
+  
+  # Just in case the pidfile is still there, we may need to nuke it.
+  [ -e "$PIDFILE" ] && rm -f $PIDFILE
+  
+  echo "Starting NetworkManager daemon:  $NM_BIN"
+  
+  [ ! -d /run/.cache ] && mkdir -p /run/.cache
+  
+  XDG_CACHE_HOME=/run/.cache $NM_BIN &
+ 
+ ;;
+ wicd)
+  wicd 2>/dev/null 1>&2 &
+ ;;
+ connman)
+  connmand &
+ ;;
+ peasywifi) #180919
+  /usr/local/peasywifi/rc.network & #180919
+ ;;
+ net-setup.sh)
+  /usr/local/network-wizard/rc.network & #180923
+ ;;
+ sns) #100306
+  /usr/lib/puppy/etc/core-scripts/rc.network_basic #this only sets up interface 'lo'.
+  /usr/local/simple_network_setup/rc.network &
+ ;;
+ connectwizard) #101007 shinobar
+  #170717 (161215) rewritten...
+  /usr/lib/puppy/etc/core-scripts/rc.network_basic #this only sets up interface 'lo'.
+  /usr/lib/puppy/etc/core-scripts/rc.network_eth &   #test for wired network.
+ ;;
+ *) #101007 shinobar
+  /usr/lib/puppy/etc/core-scripts/rc.network_basic &
+ ;;
+esac
+
+#manage network tray
+if [ -f /etc/puppy-default-connect.conf ]; then
+
+	. /etc/puppy-default-connect.conf
+ 
+	AUTOSTART_DIR=/etc/xdg/autostart
+ 
+	case $CURRENT_EXEC in
+	 connman|sns|peasywifi|net-setup.sh|frisbee|connectwizard)
+	  NBANNED="nm-applet.desktop wicd-tray.desktop"
+	  NALLOWED="netmon_wce.desktop"
+	 ;;
+	 wicd)
+	  NBANNED="nm-applet.desktop netmon_wce.desktop "
+	  NALLOWED="wicd-tray.desktop"
+	 ;;
+	 nm|network-manager|networkmanager)
+	  NBANNED="wicd-tray.desktop netmon_wce.desktop"
+	  NALLOWED="nm-applet.desktop"
+	 ;;
+	 *)
+	  NBANNED="nm-applet.desktop wicd-tray.desktop"
+	  NALLOWED="netmon_wce.desktop"
+	 ;;
+	esac
+ 
+	 for dfile in $NBANNED
+	 do
+	  if [ ! -f ${AUTOSTART_DIR}/${dfile}.bak ] && [ -f ${AUTOSTART_DIR}/${dfile} ]; then
+	   mv -f ${AUTOSTART_DIR}/${dfile} ${AUTOSTART_DIR}/${dfile}.bak 2>/dev/null 
+	  fi
+	 done
+	 
+	 if [ ! -f ${AUTOSTART_DIR}/${NALLOWED} ] && [ -f ${AUTOSTART_DIR}/${NALLOWED}.bak ]; then
+	  mv -f ${AUTOSTART_DIR}/${NALLOWED}.bak ${AUTOSTART_DIR}/${NALLOWED} 2>/dev/null 
+	 fi
+ 
+fi
+

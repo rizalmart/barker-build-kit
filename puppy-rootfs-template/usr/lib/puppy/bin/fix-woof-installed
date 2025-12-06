@@ -1,0 +1,71 @@
+#!/bin/sh
+
+. /etc/DISTRO_SPECS
+
+for file1 in $(ls -1 /var/packages/package-specs/)
+do
+
+DB_ENTRY="$(cat /var/packages/package-specs/$file1 | head -n 1)"
+
+xpkgname="$(echo "$DB_ENTRY" | cut -f 2 -d '|')"
+altpkgname="$(echo "$xpkgname" | sed -e "s#^lib##")"
+PKGDEP="$(echo "$DB_ENTRY" | cut -f 9 -d '|')"
+PKGDESC="$(echo "$DB_ENTRY" | cut -f 10 -d '|')"
+PKGCAT="$(echo "$DB_ENTRY" | cut -f 5 -d '|')"
+
+if [ "$(echo "$DB_ENTRY" | grep ".txz|")" != "" ]; then
+
+#Look for package database for closest package information
+#if [ "$PKGDEP" == "" ] || [ "$PKGDESC" == "" ] || [ "$PKGCAT" == "" ]; then
+ 
+ FDEP=""
+ FDESC=""
+ FCAT=""
+ 
+ if [ -e /var/packages/repos/Packages-${DISTRO_BINARY_COMPAT}-${DISTRO_COMPAT_VERSION} ]; then
+  DBREF="/var/packages/repos/Packages-${DISTRO_BINARY_COMPAT}-${DISTRO_COMPAT_VERSION}"
+ elif [ -e /var/packages/repos/Packages-${DISTRO_BINARY_COMPAT}-${DISTRO_COMPAT_VERSION}-official ]; then
+  DBREF="/var/packages/repos/Packages-${DISTRO_BINARY_COMPAT}-${DISTRO_COMPAT_VERSION}-official"
+ fi
+  
+ if [ "$DBREF" != "" ]; then
+
+  [ "$FDEP" == "" ] && FDEP="$PKGDEP"
+  [ "$FDESC" == "" ] && FDESC="$PKGDESC"
+  [ "$FCAT" == "" ] && FCAT="$PKGCAT"
+ 
+  nPKG="$(cat "$DBREF" | grep "|$xpkgname|" |  head -n 1)"
+  
+  if [ "$nPKG" == "" ] && [ "$(echo "$xpkgname" | grep -E "^lib")" != "" ]; then
+   nPKG="$(cat "$DBREF" | grep "|$altpkgname|" |  head -n 1)"
+  fi
+  
+  if [ "$nPKG" != "" ]; then
+   echo "Fixing $xpkgname"
+   [ "$PKGDEP" == "" ] && FDEP="$(echo "$nPKG" | cut -f 9 -d '|')"
+   [ "$PKGDESC" == "" ]  && FDESC="$(echo "$nPKG" | cut -f 10 -d '|')"
+   [ "$PKGCAT" == "" ] && FCAT="$(echo "$nPKG" | cut -f 5 -d '|')"
+  fi
+  
+  pkgname="$(echo "$DB_ENTRY" | cut -f 1 -d '|')"
+  nameonly="$(echo "$DB_ENTRY" | cut -f 2 -d '|')"
+  version="$(echo "$DB_ENTRY" | cut -f 3 -d '|')"
+  pkgrelease="$(echo "$DB_ENTRY" | cut -f 4 -d '|')"
+  size="$(echo "$DB_ENTRY" | cut -f 6 -d '|')"
+  path="$(echo "$DB_ENTRY" | cut -f 7 -d '|')"
+  fullfilename="$(echo "$DB_ENTRY" | cut -f 8 -d '|')"
+  compileddistro="$(echo "$DB_ENTRY" | cut -f 11 -d '|')"
+  compiledrelease="$(echo "$DB_ENTRY" | cut -f 12 -d '|')"
+  repo="$(echo "$DB_ENTRY" | cut -f 13 -d '|')"
+  
+  echo "$pkgname|$nameonly|$version|$pkgrelease|$FCAT|$size|$path|$fullfilename|$FDEP|$FDESC|$compileddistro|$compiledrelease|$repo|" > /var/packages/package-specs/${file1}.bak
+  
+  mv -f /var/packages/package-specs/${file1}.bak /var/packages/package-specs/${file1}
+  
+ fi
+ 
+#fi
+
+fi
+
+done

@@ -1,0 +1,22 @@
+<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+"http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
+<Menu>
+	<Name>Applications</Name>
+	<Menu>
+		<Name>Puppy Setup</Name>
+		<Directory>puppy.directory</Directory>
+			<Include>
+				<Category>X-Setup-installation</Category>
+				<Category>X-SetupUtility</Category>
+				<Category>X-Setup</Category>
+				<Category>X-SetupEntry</Category>
+				<Category>X-System</Category>
+				<Category>X-Filesystem-mount</Category>
+				<Category>X-SetupEntry</Category>
+				<Category>X-Setup-wizard</Category>
+				<Category>X-Filesystem-storage</Category>
+				<Category>X-SystemSchedule</Category>
+				<Category>X-Setup-puppy</Category>
+			</Include>
+	</Menu>
+</Menu>

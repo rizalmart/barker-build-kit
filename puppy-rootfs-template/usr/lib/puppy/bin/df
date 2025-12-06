@@ -1,0 +1,55 @@
+#!/bin/ash
+#(c) Barry Kauler 2009, licence GPL2
+#w482 fix for /dev/root.
+
+DF_BIN=/bin/df
+
+[ -L $DF_BIN ] && DF_BIN=$(readlink $DF_BIN)
+
+if [ "$(file $DF_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $DF_BIN)" != "busybox" ]; then
+ DF=$DF_BIN
+else
+	
+	DF_BIN=/bin/df-FULL
+	
+	[ -L $DF_BIN ] && DF_BIN=$(readlink $DF_BIN)
+
+	if [ "$(file $DF_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $DF_BIN)" != "busybox" ]; then
+	 DF=$DF_BIN 
+	else
+	 DF="busybox df"
+	fi
+	
+fi
+
+
+RETSTUFF="`$DF "$@"`" #quotes added
+RETVAL=$?
+
+echo "$RETSTUFF" | \
+while read line
+do
+	case $line in
+		rootfs*) continue ;;
+		/dev/root*)
+			# replace /dev/root with correct root partition...
+			if [ -e /dev/root ] ; then #rc.sysinit
+				ROOTPARTITION=`readlink /dev/root`
+			else
+				# rdev is a busybox applet...
+				read ROOTPARTITION MP <<EOF
+$(rdev)
+EOF
+			fi
+			if [ "$ROOTPARTITION" ] ; then
+				echo "$ROOTPARTITION ${line#/dev/root }"
+				continue
+			fi
+			;;
+	esac
+	echo "$line"
+done
+
+exit $RETVAL
+
+###END###

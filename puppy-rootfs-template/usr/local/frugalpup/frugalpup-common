@@ -1,0 +1,53 @@
+# some common variable definitions
+
+VER='1'
+if [ -f "$EXE_DIR/ver" ]; then
+	. "$EXE_DIR/ver"
+fi
+TnVer="v${VER}"
+
+UTILS_DIR="$EXE_DIR/utils"
+
+PARMS_FN='extra_boot_parameters.txt'
+CACHE_FN='/tmp/frugalpup_vars_cache.txt'
+CONFIG_FN="$HOME/.config/frugalpup.conf"
+if [ ! -e "$CONFIG_FN" ]; then
+	[ -e "$EXE_DIR/${CONFIG_FN##*/}" ] && cp "$EXE_DIR/${CONFIG_FN##*/}" "$CONFIG_FN"
+fi
+
+gtkVer="$(yad --version)"; gtkVer="${gtkVer#*GTK+ }"; gtkVer="${gtkVer%%.*}"
+if [ "$gtkVer" = '2' ]; then
+	YAD_STD_OPTS='--window-icon=/usr/share/pixmaps/gnibbles.png --center --buttons-layout=spread'
+else
+	YAD_STD_OPTS="--window-icon=/usr/share/pixmaps/gnibbles.png --buttons-layout=spread"
+fi
+
+PUP_GRUB='/usr/share/grub2'
+EFI_BIN='grub2-efi-bin.tar.xz'
+EFI_FONT='grub2-efi-font.tar.xz'
+MBR_FN='grub2-mbr.tar.xz'
+
+MuPurple="<span foreground='purple'>"
+MuBlue="<span foreground='blue'>"
+MuRed="<span foreground='red'>"
+MuEnd='</span>'
+MuBig='<big>'
+MuBe='</big>'
+
+TnFrugal="$(gettext 'FrugalPup')"
+TnDisk="$(gettext 'DiskPup')"
+TnStick="$(gettext 'StickPup')"
+TnF2="$(gettext 'f2StickPup')"
+TnE3="$(gettext 'e3StickPup')"
+TnE4="$(gettext 'e4StickPup')"
+
+
+TbHelp="$(gettext 'Help')"
+TbSet="$(gettext 'Settings')"
+TbPup="$(gettext 'Puppy')"
+TbBoot="$(gettext 'Boot')"
+TbCd="$(gettext 'BootCD')"
+
+TbExit="$(gettext 'Exit')"
+TbCancel="$(gettext 'Cancel')"
+TbOk="$(gettext 'Ok')"

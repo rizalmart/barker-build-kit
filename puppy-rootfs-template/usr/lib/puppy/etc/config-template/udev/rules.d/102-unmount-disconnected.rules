@@ -1,0 +1,6 @@
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="sd*[0-9]", RUN+="/usr/lib/puppy/bin/unmount-disconnected-device %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="hd*[0-9]", RUN+="/usr/lib/puppy/bin/unmount-disconnected-device %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="nvme*p[0-9]", RUN+="/usr/lib/puppy/bin/unmount-disconnected-device %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="mmcblk*p[0-9]", RUN+="/usr/lib/puppy/bin/unmount-disconnected-device %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="sr*[0-9]", RUN+="/usr/lib/puppy/bin/unmount-disconnected-device %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="scd*[0-9]", RUN+="/usr/lib/puppy/bin/unmount-disconnected-device %k"

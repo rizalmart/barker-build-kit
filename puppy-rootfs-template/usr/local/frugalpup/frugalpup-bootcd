@@ -1,0 +1,176 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+error_exit() {
+	[ "$SRC_MTD" ] && umount "$SRC_MTD"
+	[ -d "$ISO_FILES" ] && rm -rf "$ISO_FILES"
+	[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+	if [ "$1" ]; then
+		yad $YAD_STD_OPTS --title "${Tt}" --width=400 --text-align=center \
+			--text "${MuBig}${1}${MuBe}" \
+			--button=${TbOk}!gtk-ok:0
+	fi
+	exit 1
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+Tt="${TnFrugal}-${TbCd} ${TnVer}"
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext 'File %s not found')" "${MuPurple}${UTILS_DIR}/functions_part${MuEnd}")"
+. "$UTILS_DIR/functions_part"
+
+MBR_TAR=''
+[ -f "$EXE_DIR/grub2-mbr.tar.xz" ] && MBR_TAR="$EXE_DIR/grub2-mbr.tar.xz"
+[ "$MBR_TAR" ] || error_exit "$(gettext 'grub2-mbr support missing')"
+
+ISO_TAR=''
+[ -f "$EXE_DIR/grub2-iso.tar.xz" ] && ISO_TAR="$EXE_DIR/grub2-iso.tar.xz"
+[ "$ISO_TAR" ] || error_exit "$(gettext 'grub2-iso support missing')"
+
+TMP_BLK="/tmp/${myName}_$$_blk_list.txt"
+busybox blkid | grep -v 'squashfs' | grep -v 'swap' | grep -v 'zram' | sort > "$TMP_BLK"
+TMP_LIST="/tmp/${myName}_$$_tmp_list.txt"
+[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+
+while read ONE_LINE; do
+	TYPE="${ONE_LINE#*TYPE=\"}"
+	[ "${TYPE:0:1}" = "/" ] && TYPE='' || TYPE="${TYPE%%\"*}"
+	case $TYPE in
+		crypto_LUKS|iso9660|udf) continue ;;
+		*) ;;
+	esac
+	DRV="${ONE_LINE%%:*}"; DRV="${DRV#/dev/}"
+	LAB="${ONE_LINE#*LABEL=\"}"
+	[ "${LAB:0:1}" = "/" ] && LAB='' || LAB="${LAB%%\"*}"
+	[ "$LAB" = "System Reserved" ] && continue
+	[ "$LAB" = "" -a "$TYPE" = "ntfs" ] && continue
+	echo "$DRV" >> "$TMP_LIST"
+	if [ "$TYPE" = 'vfat' ]; then
+		echo "fat32" >> "$TMP_LIST"
+	else
+		echo "$TYPE" >> "$TMP_LIST"
+	fi
+	echo "$LAB" >> "$TMP_LIST"
+done < "$TMP_BLK"
+rm "$TMP_BLK"
+
+if [ -s "$TMP_LIST" ]; then
+	Tm0="$(gettext 'partition')"
+	Tm1="$(gettext 'Select a partition:')"
+	Tm2="$(gettext 'If a fat32 partiton is selected that contains a %s file,\nthen an ISO file will be generated that chainloads that grub2 install.')"
+	Tm3="$(printf "${Tm2}" "${MuPurple}/boot/grub/i386-pc/core.img${MuEnd}")"
+	Tm4="$(gettext 'Otherwise,\nit will be assumed that the selected partition contains Puppy frugal installs,\nand an ISO file will be generated to boot these installed Puppies.')"
+	SRC_SPEC="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" --height=360 --width=520 \
+		--text "${Tm1}
+
+${Tm3}
+${Tm4}" \
+		--list --print-column=1 --column=Partition --column=FileSystem --column=Label < $TMP_LIST \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+	rm "$TMP_LIST"
+	[ "$SRC_SPEC" ] || error_exit "$(gettext 'No partition selected')"
+else
+	error_exit "$(gettext 'No suitable Puppy partitions found')"
+fi
+
+SRC_MTD=''
+SRC_PART="${SRC_SPEC%|}"
+ensure_mounted "$SRC_PART"
+[ "$ensure_mounted_DID" ] && SRC_MTD="$ensure_mounted_MP"
+[ "$ensure_mounted_MP" ] || error_exit "$(gettext 'Could not mount') \"$SRC_PART\""
+SRC_MP="$ensure_mounted_MP"
+
+DO_GRUB2=''
+SRC_TYPE="${SRC_SPEC#*|}"; SRC_TYPE="${SRC_TYPE%%|*}"
+if [ "$SRC_TYPE" = "fat32" ]; then
+	[ -e "$SRC_MP/boot/grub/i386-pc/core.img" ] && DO_GRUB2='yes'
+fi
+
+ISO_FILES='/tmp/iso_root'
+[ -d "$ISO_FILES" ] && rm -rf "$ISO_FILES"
+mkdir -p "$ISO_FILES"
+
+if [ "$DO_GRUB2" ]; then
+	ISO_FN="$HOME/boot_grub2.iso"
+	#ISO_FN="./boot_grub2.iso"
+
+	tar xf "$MBR_TAR" --exclude=./boot -C "$ISO_FILES" >/dev/null
+
+	UUID="${SRC_SPEC#*|*|*|}"; UUID="${UUID%%|*}"
+	echo "timeout 0" > "$ISO_FILES/menu.lst"
+	echo "default 0" >> "$ISO_FILES/menu.lst"
+	echo "title grub2" >> "$ISO_FILES/menu.lst"
+	echo "  find --set-root --ignore-floppies uuid () $UUID" >> "$ISO_FILES/menu.lst"
+	echo "  kernel /boot/grub/i386-pc/core.img" >> "$ISO_FILES/menu.lst"
+
+	Tm0="$(gettext 'confirm')"
+	Tm1="$(gettext 'The generated contents are now present in')"
+	Tm2="$(printf "$(gettext 'Click %s to write %s.')" "${MuBlue}${TbOk}${MuEnd}" "${MuPurple}${ISO_FN}${MuEnd}")"
+
+	yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--text "${Tm1} ${MuPurple}${ISO_FILES}${MuEnd}
+
+${Tm2}" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0
+	[ $? -eq 0 ] || error_exit
+
+	[ -f "$ISO_FN" ] && rm "$ISO_FN"
+	mkisofs -R -b grldr -no-emul-boot -boot-info-table -boot-load-size 4 -o "$ISO_FN" "$ISO_FILES" 2>/dev/null
+else
+	ISO_FN="$HOME/puppy_boot.iso"
+	#ISO_FN="./puppy_boot.iso"
+
+	Tm0="$(gettext 'Puppy directory')"
+	Tm1="$(gettext 'Select the directory containing Puppy frugal install(s).')"
+
+	INSTALL_DIR="$(yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--file --directory --width=600 --height=460 \
+		--text " ${Tm1}" \
+		--filename="$SRC_MP/" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0)"
+	[ $? -eq 0 ] || error_exit
+
+	tar xf "$MBR_TAR" -C "$ISO_FILES" >/dev/null
+	tar xf "$ISO_TAR" -C "$ISO_FILES" >/dev/null
+
+	[ -f "$ISO_FILES/menu.lst" ] && rm "$ISO_FILES/menu.lst"
+	[ -f "$ISO_FILES/grldr" ] && rm "$ISO_FILES/grldr"
+	[ -f "$ISO_FILES/boot/grub/i386-pc/core.img" ] && rm "$ISO_FILES/boot/grub/i386-pc/core.img"
+
+	cat "$EXE_DIR/cfg-top-mbr.txt" > "$ISO_FILES/grub.cfg"
+	ERR_MSG="$("$EXE_DIR/frugalpup-bootentry" "$INSTALL_DIR" fs "$ISO_FILES")"
+	[ $? -eq 0 ] || error_exit "$ERR_MSG"
+	cat "$EXE_DIR/cfg-bot.txt" >> "$ISO_FILES/grub.cfg"
+
+	Tm0="$(gettext 'confirm')"
+	Tm1="$(gettext 'The generated contents are now present in')"
+	Tm2="$(printf "$(gettext 'The grub2 configuration file %s can be edited before writing the iso file.')" "${MuPurple}${ISO_FILES}/grub.cfg${MuEnd}")"
+	Tm3="$(printf "$(gettext 'Click %s to write %s.')" "${MuBlue}${TbOk}${MuEnd}" "${MuPurple}${ISO_FN}${MuEnd}")"
+
+	yad $YAD_STD_OPTS --title "${Tt} - ${Tm0}" \
+		--text "${Tm1} ${MuPurple}${ISO_FILES}${MuEnd}
+
+${Tm2}
+
+${Tm3}" \
+		--button=${TbCancel}!gtk-cancel:1 --button=${TbOk}!gtk-ok:0
+	[ $? -eq 0 ] || error_exit
+
+	[ -f "$ISO_FN" ] && rm "$ISO_FN"
+	mkisofs -R -b boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-info-table -boot-load-size 4 -o "$ISO_FN" "$ISO_FILES" 2>/dev/null
+fi
+
+[ "$SRC_MTD" ] && umount "$SRC_MTD"
+
+[ -d "$ISO_FILES" ] && rm -rf "$ISO_FILES"
+
+exit

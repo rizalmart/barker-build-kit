@@ -1,0 +1,7 @@
+#
+set default=0
+set timeout=5
+
+set menu_color_normal='yellow/blue'
+set menu_color_highlight='black/cyan'
+

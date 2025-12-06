@@ -1,0 +1,114 @@
+#!/bin/ash
+#
+# functions to handle partitions
+#
+get_part_id() {
+	# "$1" - partition - ex: sda3
+	get_part_id_RET=''
+	[ "$1" ] || return 1
+	local ID="$(busybox blkid /dev/$1 | grep -o ' LABEL=.*' | cut -f2 -d '"')"
+	[ "$ID" ] || ID="$(busybox blkid /dev/$1 | grep -o ' UUID=.*' | cut -f2 -d '"')"
+	[ "$ID" ] && get_part_id_RET="$ID"
+	# "$1" - partition - ex: sda3
+}
+
+get_part_fs() {
+	# "$1" - partition - ex: sda3
+	get_part_fs_RET=''
+	[ "$1" ] || return 1
+	local FS="$(busybox blkid /dev/$1)"
+	if [ "$FS" ]; then
+		FS="${FS#* TYPE=\"}"
+		FS="${FS%%\"*}"
+		get_part_fs_RET="$FS"
+	fi
+}
+
+get_part_fs_class() {
+	# "$1" - fs type - ex: ext4
+	get_part_fs_class_RET=''
+	[ "$1" ] || return 1
+	case $1 in
+		ext2|ext3|ext4|reiserfs|minix|f2fs|btrfs) get_part_fs_class_RET='linux' ;;
+		iso9660|udf) get_part_fs_class_RET='cd' ;;
+		swap) get_part_fs_class_RET='swap' ;;
+		*) get_part_fs_class_RET='other' ;;
+	esac
+}
+
+get_part_mp() {
+	# $1 - partition name - e.g. sdb2
+	get_part_mp_RET=''
+	[ "$1" ] || return 1
+	local MP
+	MP="$(grep -m1 "^/dev/$1" /proc/mounts)"
+	[ "$MP" ] || MP="$(grep '^/dev/mapper/luks' /proc/mounts | grep -m1 "$1")"
+	if [ "$MP" ]; then
+		MP="${MP#* }"; MP="${MP%% *}"
+		get_part_mp_RET="$MP"
+	fi
+}
+
+ensure_mounted() {
+	# "$1" - partition - ex: sda3
+	ensure_mounted_MP=''; ensure_mounted_DID=''
+	[ "$1" ] || return 1
+	get_part_mp "$1"
+	if [ "$get_part_mp_RET" ]; then
+		ensure_mounted_MP="$get_part_mp_RET"
+	else
+		local FS MP
+		get_part_fs "$1"
+		[ "$get_part_fs_RET" ] || return 1
+		[ "$get_part_fs_RET" = "swap" ] && return 1
+		get_part_fs_class "$get_part_fs_RET"
+		MP="/mnt/$1"
+		[ -d "$MP" ] || mkdir -p "$MP"
+		if [ "$get_part_fs_RET" = "ntfs" ]; then
+			ntfs-3g -o noatime "/dev/$1" "$MP"
+			STATUS=$?
+		elif [ "$get_part_fs_RET" = "vfat" ]; then
+			VFAT_OUT_PARAM='shortname=mixed,quiet,utf8'
+			mount -t vfat -o noatime,${VFAT_OUT_PARAM} "/dev/$1" "$MP"
+			STATUS=$?
+		elif [ "$get_part_fs_class_RET" = "cd" ]; then
+			mount -t "$get_part_fs_RET" -o ro,noatime "/dev/$1" "$MP"
+			STATUS=$?
+		else
+#			mount -t "$get_part_fs_RET" "/dev/$1" "$MP"
+			MNT_O='noatime'
+			get_device $1
+			MNT_DSK="$get_device_RET"
+			if [ -f "/sys/block/$MNT_DSK/queue/rotational" ];then
+				if [ "$(cat /sys/block/$MNT_DSK/queue/rotational)" = "0" ];then
+					if [ "$get_part_fs_RET" = "ext4" -o "$get_part_fs_RET" = "f2fs" ];then
+						MNT_O="${MNT_O},discard"
+					fi
+				fi
+			fi
+			mount -t "$get_part_fs_RET" -o $MNT_O "/dev/$1" "$MP"
+			STATUS=$?
+		fi
+		if [ $STATUS -eq 0 ]; then
+			ensure_mounted_DID='yes'
+			ensure_mounted_MP="$MP"
+		else
+			return 1
+		fi
+	fi
+	return 0
+}
+
+get_device() {
+	# "$1" - partition - ex: sda3
+	get_device_RET=''
+	[ "$1" ] || return 1
+	PART="$1"
+	while [ ${#PART} -gt 2 ]; do
+		if [ -d /sys/block/$PART ]; then
+			get_device_RET="$PART"
+			break
+		fi
+		PART=${PART%?}
+	done
+}

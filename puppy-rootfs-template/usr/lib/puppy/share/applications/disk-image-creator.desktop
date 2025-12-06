@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Disk Image Creator
+Comment=Create disk images
+GenericName=CleanRAM
+Exec=disk-img-creator
+Terminal=false
+Type=Application
+Icon=puppy-floppy
+Categories=X-Filesystem-storage;Filesystem
+StartupNotify=false

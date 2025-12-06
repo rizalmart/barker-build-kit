@@ -1,0 +1,361 @@
+#!/bin/sh
+
+[ "`whoami`" != "root" ] && exec sudo -A ${0} ${@} #support sudo for non-root user.
+
+. /etc/rc.d/BOOTCONFIG
+. /etc/rc.d/PUPSTATE
+. /etc/DISTRO_SPECS
+
+[ "$PUNIONFS" != "overlay" ] && exit 1
+
+export INITRD_FLD="/initrd"
+
+[ -L /initrd ] && export INITRD_FLD=$(readlink /initrd 2>/dev/null)
+
+export TEXTDOMAIN=sfs_load
+export OUTPUT_CHARSET=UTF-8
+
+queue() {
+	. /etc/rc.d/BOOTCONFIG
+	cat << EOF > /etc/rc.d/BOOTCONFIG.tmp
+EXTRASFSLIST='`echo "$EXTRASFSLIST $1" | tr ' ' '\n' | sort | uniq | tr '\n' ' ' | sed -e 's/^ //' -e 's/ $//'`'
+PREVUNIONRECORD='$PREVUNIONRECORD'
+LASTUNIONRECORD='$LASTUNIONRECORD'
+EOF
+	mv -f /etc/rc.d/BOOTCONFIG.tmp /etc/rc.d/BOOTCONFIG
+}
+
+unqueue() {
+	. /etc/rc.d/BOOTCONFIG
+	cat << EOF > /etc/rc.d/BOOTCONFIG.tmp
+EXTRASFSLIST='`echo "$EXTRASFSLIST $1" | tr ' ' '\n' | sort | uniq | grep -Fv $1 | tr '\n' ' ' | sed -e 's/^ //' -e 's/ $//'`'
+PREVUNIONRECORD='$PREVUNIONRECORD'
+LASTUNIONRECORD='$LASTUNIONRECORD'
+EOF
+	mv -f /etc/rc.d/BOOTCONFIG.tmp /etc/rc.d/BOOTCONFIG
+}
+
+QUIET=0
+CLI=0
+START=0
+STOP=0
+while [ -n "$1" ]
+do
+	case "$1" in
+		-q|--quiet) QUIET=1 ;;
+		-c|--cli) CLI=1 ;;
+		-qc|-cq)
+			CLI=1
+			QUIET=1
+			;;
+		start) START=1 ;;
+		stop) STOP=1 ;;
+		-*.sfs) break ;;
+		-*)
+			echo "Usage: $0 [-q|--quiet] [-c|--cli] [start|stop] [+sfs|-sfs|sfs]..." 1>&2
+			exit 1
+			;;
+		*) break ;;
+	esac
+
+	shift
+done
+
+# wait until other instances are done, otherwise we can't list files added by each SFS
+exec 9<>/run/sfs_load.lock
+flock 9
+
+# loading of SFSs in EXTRASFSLIST is handled by initrd, see initrd-progs/0initrd/init
+if [ $START -eq 1 -o $STOP -eq 1 ]; then
+	[ $PUPMODE -eq 5 ] && exit 0
+
+	DIRTY=0
+	CHANGED=0
+	# the directory may exist if a user moves away from PUMODE 12, so we still need to do this under 13
+	for LIST in `ls /var/lib/sfs_load.overlay/* 2>/dev/null`; do
+		MNT="${INITRD_FLD}/${LIST#/var/lib/sfs_load.overlay/}"
+
+		OK=1
+		# delete all symlinks to files under the SFS mount point
+		
+		PREPATH=""
+				
+	    #[ "$(mount | grep "${INITRD_FLD}/pup_olink")" != "" ] && PREPATH="${INITRD_FLD}/pup_olink"
+		
+		while read RELPATH; do
+		
+			ABSPATH="${PREPATH}/${RELPATH}"
+			
+			if [ -L "$ABSPATH" ]; then
+				DST=`readlink "$ABSPATH"`
+				case "$DST" in
+				${MNT}/*)
+					rm "$ABSPATH" && CHANGED=1 || OK=0
+					;;
+				esac
+			elif [ -d "$ABSPATH" ]; then
+				rmdir "$ABSPATH" 2>/dev/null
+			fi
+		done < "$LIST"
+
+		if [ $OK -eq 1 -a -d "$MNT" ]; then
+			umount -l "$MNT" 2>/dev/null
+			rmdir "$MNT" 2>/dev/null
+		fi
+
+		# delete the list only if all symlinks are deleted, to allow retry
+		[ $OK -eq 1 ] && DIRTY=1
+	done
+
+	# update cache and delete the list if all symlinks are deleted
+	if [ $DIRTY -eq 1 ]; then
+		/usr/lib/puppy/etc/core-scripts/rc.update w
+		rm -f /var/lib/sfs_load.overlay/*
+		sync
+	# otherwise, if we made any change, update cache but keep the lists to allow retry
+	elif [ $CHANGED -eq 1 ]; then
+		/usr/lib/puppy/etc/core-scripts/rc.update w
+	fi
+
+	exit 0
+fi
+
+if [ -z "$PUP_HOME" ]; then
+	SFS_DIRS="${INITRD_FLD}/mnt/pdrv"
+else
+	SFS_DIRS="${INITRD_FLD}${PUP_HOME}"
+	[ -n "$PSUBDIR" ] && SFS_DIRS="${INITRD_FLD}${PUP_HOME}${PSUBDIR} $SFS_DIRS"
+fi
+
+if [ $# -ne 0 ]; then
+	for SFS in "$@"; do
+		ACTION=toggle
+		case "$SFS" in
+		+*)
+			SFS=${SFS:1}
+			ACTION=load
+			;;
+		-*)
+			SFS=${SFS:1}
+			ACTION=unload
+			;;
+		esac
+
+		case "$SFS" in
+		*/*.sfs) ;;
+		*.sfs)
+			for SFS_DIR in $SFS_DIRS; do
+				[ -s "${SFS_DIR}/${SFS}" ] || continue
+				SFS="${SFS_DIR}/${SFS}"
+				break
+			done
+			;;
+		esac
+
+		ASKMOUNT=1
+		# assumption: if we have a loop device associated with this SFS, it's mounted or loaded
+		LOOPDEV="`losetup -n -j "$SFS" | head -n 1 | cut -f 1 -d :`"
+
+		if [ $ACTION != unload ] && [ -z "$LOOPDEV" ]; then
+			if [ $QUIET -eq 1 ]; then
+				:
+			else
+				yad --title sfs_load --window-icon=dialog-question --image=dialog-question --text "$(gettext "Do you want to load") ${SFS}?" --form --button="gtk-yes:0" --button="gtk-no:1"
+			fi
+			if [ $? -eq 0 ]; then
+				FOUND=0
+				for i in `seq 3 99`
+				do
+					MNT="${INITRD_FLD}/pup_ro$i"
+					[ -e "$MNT" ] && continue
+					FOUND=1
+					break
+				done
+				[ $FOUND -eq 0 ] && exit 1
+
+				mkdir -p "$MNT" || continue
+				mount -r -t squashfs -o loop,noatime "$SFS" "$MNT"
+				if [ $? -ne 0 ]; then
+					rmdir "$MNT"
+					continue
+				fi
+				ASKMOUNT=0
+
+				if [ $CLI -eq 0 ]; then
+					yaf-splash -bg orange -placement top -close never -text "$(gettext Loading) ${SFS##*/}" &
+					PID=$!
+				fi
+
+				# create a list of new files and flush it to disk before we create the symlinks
+				mkdir -p /var/lib/sfs_load.overlay
+				
+				LIST="/var/lib/sfs_load.overlay/${MNT#${INITRD_FLD}/}"
+				
+				PREPATH=""
+				#[ "$(mount | grep "${INITRD_FLD}/pup_olink")" != "" ] && PREPATH="${INITRD_FLD}/pup_olink"
+				
+				while read RELPATH; do
+					ABSPATH="${PREPATH}/${RELPATH}"
+					[ -e "$ABSPATH" -o -L "$ABSPATH" ] || echo "$RELPATH" >> "$LIST"
+				done < <(find "$MNT" -mindepth 1 | cut -f 4- -d / | sort -r)
+				
+				[ $PUPMODE -eq 12 ] && sync "$LIST"
+
+				#link anything except /etc, /run, and /var
+				for fld1 in $(ls $MNT 2>/dev/null | grep -vE '\/etc|\/run|\/var')
+				do
+ 				  if [ "$fld1" != "" ]; then
+					  if [ ! -d "/$fld1" ] && [ ! -L "/$fld1" ]; then 
+					    mkdir -p "/$fld1"
+					  fi
+					  cp -rasn "$MNT/$fld1"/* "/$fld1"/
+				  fi
+				done
+
+				#copy files in /etc, /run, and /var
+				for fld1 in etc run var
+				do
+ 				  if [ "$fld1" != "" ]; then
+					  if [ ! -d "/$fld1" ] && [ ! -L "/$fld1" ]; then 
+					    mkdir -p "/$fld1"
+					  fi
+					  cp -ran "$MNT/$fld1"/* "/$fld1"/
+				  fi
+				done
+				
+				/usr/lib/puppy/etc/core-scripts/rc.update w
+				
+				pidof -s jwm > /dev/null && jwm -reload
+				[ $CLI -eq 0 ] && kill $PID
+			fi
+		elif [ $ACTION != load -a -n "$LOOPDEV" ]; then
+			MNT="`grep "^$LOOPDEV " /proc/mounts 2>/dev/null | head -n 1 | cut -f 2 -d ' '`"
+			case "$MNT" in
+			${INITRD_FLD}/pup_ro1|${INITRD_FLD}/pup_ro2) ;;
+			${INITRD_FLD}/pup_ro[1-9]*)
+				if [ $QUIET -eq 1 ]; then
+					:
+				else
+					yad --title sfs_load --window-icon=dialog-question --image=dialog-question --text "$(gettext "Do you want to unload") ${SFS}?" --form --button="gtk-yes:0" --button="gtk-no:1"
+				fi
+				if [ $? -eq 0 ]; then
+					if [ $CLI -eq 0 ]; then
+						yaf-splash -bg orange -placement top -close never -text "$(gettext Unloading) ${SFS##*/}" &
+						PID=$!
+					fi
+					LIST="/var/lib/sfs_load.overlay/${MNT#${INITRD_FLD}/}"
+					
+					PREPATH=""
+				
+					#[ "$(mount | grep "${INITRD_FLD}/pup_olink")" != "" ] && PREPATH="${INITRD_FLD}/pup_olink"
+					
+					while read RELPATH; do
+						ABSPATH="${PREPATH}/${RELPATH}"
+						if [ -L "$ABSPATH" ]; then
+							DST=`readlink "$ABSPATH"`
+							case "$DST" in
+							${MNT}/*) rm -f "$ABSPATH" ;;
+							esac
+						elif [ -d "$ABSPATH" ]; then
+							rmdir "$ABSPATH" 2>/dev/null
+						fi
+					done < "$LIST"
+					umount -l "$MNT"
+					rmdir "$MNT"
+					rm -f "$LIST"
+					/usr/lib/puppy/etc/core-scripts/rc.update w
+					pidof -s jwm > /dev/null && jwm -reload
+					[ $PUPMODE -eq 12 ] && sync
+					[ $CLI -eq 0 ] && kill $PID
+				fi
+				;;
+			esac
+
+			ASKMOUNT=0
+		fi
+
+		[ $QUIET -eq 1 ] && continue
+
+		BASE="${SFS##*/}"
+
+		SKIP=0
+		case "$BASE" in
+		$DISTRO_BDRVSFS|$DISTRO_PUPPYSFS|$DISTRO_ZDRVSFS|$DISTRO_FDRVSFS|$DISTRO_ADRVSFS|$DISTRO_YDRVSFS|kbuild-*.sfs|devx_${DISTRO_FILE_PREFIX}_${DISTRO_VERSION}.sfs|docx_${DISTRO_FILE_PREFIX}_${DISTRO_VERSION}.sfs|nlsx_${DISTRO_FILE_PREFIX}_${DISTRO_VERSION}.sfs) SKIP=1 ;;
+		esac
+
+		if [ $SKIP -eq 0 -a $PUPMODE -ne 5 ]; then
+			QUEUED=0
+			for QBASE in $EXTRASFSLIST; do
+				[ "$BASE" != "$QBASE" ] && continue
+				QUEUED=1
+				break
+			done
+
+			if [ $QUEUED -eq 0 ]; then
+				yad --title sfs_load --window-icon=dialog-question --image=dialog-question --text "$(gettext "Do you want to queue") ${SFS}?" --form --button="gtk-yes:0" --button="gtk-no:1"
+				if [ $? -eq 0 ]; then
+					DST="${INITRD_FLD}${PUP_HOME}${PSUBDIR}/${BASE}"
+					if [ ! -e "$DST" -a ! -e "${INITRD_FLD}${PUP_HOME}/${BASE}" ]; then
+						cp -f "$SFS" "$DST" || continue
+					fi
+					SFS="$DST"
+					queue "$BASE"
+				fi
+			else
+				yad --title sfs_load --window-icon=dialog-question --image=dialog-question --text "$(gettext "Do you want to unqueue") ${SFS}?" --form --button="gtk-yes:0" --button="gtk-no:1"
+				[ $? -eq 0 ] && unqueue "$BASE"
+			fi
+		fi
+
+		[ $ASKMOUNT -eq 0 ] && continue
+		yad --title sfs_load --window-icon=dialog-question --image=dialog-question --text "$(gettext "Do you want to mount") ${SFS}?" --form --button="gtk-yes:0" --button="gtk-no:1"
+		[ $? -ne 0 ] && continue
+		MNT="/mnt/`echo "$BASE" | tr '/ ' '+_'`"
+		mkdir -p "$MNT"
+		mountpoint -q "$MNT"
+		if [ $? -ne 0 ]; then
+			mount -r -t squashfs -o loop,noatime "$SFS" "$MNT" || continue
+		fi
+
+		defaultfilemanager "$MNT" &
+	done
+
+	exit 0
+fi
+
+[ $QUIET -eq 1 -o $CLI -eq 1 ] && exit 0
+
+export -f queue unqueue
+
+BUTTONS=""
+KBUILDSFS="kbuild-`uname -r`.sfs"
+for SFS in `find $SFS_DIRS -maxdepth 1 -name '*.sfs' -printf '%f\n' | sort | uniq`; do
+	case "$SFS" in
+	$DISTRO_BDRVSFS|$DISTRO_PUPPYSFS|$DISTRO_ZDRVSFS|$DISTRO_FDRVSFS|$DISTRO_ADRVSFS|$DISTRO_YDRVSFS|$KBUILDSFS|devx_${DISTRO_FILE_PREFIX}_${DISTRO_VERSION}.sfs|docx_${DISTRO_FILE_PREFIX}_${DISTRO_VERSION}.sfs|nlsx_${DISTRO_FILE_PREFIX}_${DISTRO_VERSION}.sfs)
+		BUTTONS="<togglebutton><label>$SFS</label><default>true</default><sensitive>false</sensitive></togglebutton>$BUTTONS"
+		continue
+		;;
+	esac
+
+	DEF=false
+	for BASE in $EXTRASFSLIST; do
+		[ "$BASE" != "$SFS" ] && continue
+		DEF=true
+		break
+	done
+
+	BUTTONS="$BUTTONS<togglebutton><label>$SFS</label><default>$DEF</default><action>if true queue \"$SFS\"</action><action>if false unqueue \"$SFS\"</action></togglebutton>"
+done
+
+[ -z "$BUTTONS" ] && BUTTONS="<text><label>$(gettext 'Could not find any SFS to queue.')</label></text>"
+
+export DIALOG='<window title="SFS-Load" default_width="400">
+	<vbox space-expand="true" space-fill="true">
+		'`/usr/lib/gtkdialog/xml_info fixed package_sfs.svg 20 "$(gettext "Which SFS do you want to load?")"`'
+		<vbox scrollable="true" height="400">
+		'$BUTTONS'
+		</vbox>
+	</vbox>
+</window>'
+
+exec gtkdialog -p DIALOG

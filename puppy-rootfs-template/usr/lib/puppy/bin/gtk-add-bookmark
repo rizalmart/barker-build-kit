@@ -1,0 +1,53 @@
+#!/bin/bash
+
+iPATHS=$@
+
+APP_TITLE="GTK+ bookmark helper"
+
+if [ "$iPATHS" == "" ]; then
+echo "usage: $0 [ folder path ]
+Adds folder to GTK+ bookmarks
+"
+exit
+fi
+
+
+for pth in $iPATHS
+do
+ 
+ VALID_PATH=""
+ 
+ if [ -d $pth ]; then
+  VALID_PATH="y"
+ elif [ -L $pth ]; then
+ 
+  rlpath="$(readlink $pth 2>/dev/null)"
+ 
+  if [ "$rlpath" != "" ] && [ -d $rlpath ]; then
+   VALID_PATH="y"
+  fi
+
+ fi
+ 
+ if [ "$VALID_PATH" != "" ]; then
+   PTRN="$(echo $pth | sed -e 's#\-#\\\-#g')"
+   
+  for gtkver in 2.0 3.0 4.0
+  do
+   if [ "$(grep "$PTRN" $HOME/.config/gtk-${gtkver}/bookmarks 2>/dev/null)" == "" ]; then
+    [ ! -e $HOME/.config/gtk-${gtkver} ] && mkdir -p $HOME/.config/gtk-${gtkver} 
+    echo "file://$pth" >> $HOME/.config/gtk-${gtkver}/bookmarks
+    echo "Added to gtk-${gtkver} bookmarks: $pth"
+   else
+    echo "Bookmark already exists on gtk-${gtkver}: $pth"
+   fi
+  done
+ 
+ fi
+ 
+done
+
+
+if [ "$DISPLAY" != "" ] ||  "$WAYLAND_DISPLAY" != "" ]; then
+ /usr/lib/gtkdialog/box_ok "$APP_TITLE" info "Selected path was added to bookmarks"
+fi

@@ -1,0 +1,25 @@
+#!/bin/sh
+
+[ -e /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+if [ "$PUPMODE" == "" ] || [ "$PUPMODE" == "2" ]; then
+ PREROOT=""
+else
+ PREROOT="/initrd/pup_ro2"
+fi
+
+rm -f $PREROOT/tmp/unreg-symlinks.txt 2>/dev/null
+
+cat $PREROOT/var/packages/builtin_files/* > /tmp/filesdb.txt
+
+for fld in /lib /lib64 /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64
+do
+ for slink in $(find $PREROOT$fld -type l -name "*.so*" | sort)
+ do
+  slinkptrn="$(echo "$slink" | sed -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#" -e "s#\/#\\\/#")"
+  if [ "$(cat /tmp/filesdb.txt | grep -E '^'$slinkptrn'$')" == "" ]; then
+   echo "$slink" >> /tmp/unreg-symlinks.txt
+  fi
+ done
+
+done

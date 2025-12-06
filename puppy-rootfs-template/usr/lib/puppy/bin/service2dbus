@@ -1,0 +1,18 @@
+#!/bin/sh
+#Convert systemd dbus type service to dbus service
+
+[ "$1" == "" ] && exit
+
+SRVFILE="$1"
+
+BUSNAME=$(grep -h -m 1 "^BusName=" $SRVFILE | sed -e "s#^BusName=##")
+EXEC=$(grep -h -m 1 "^ExecStart=" $SRVFILE | sed -e "s#^ExecStart=##")
+USER1=$(grep -h -m 1 "^User=" $SRVFILE | sed -e "s#^User=##")
+
+echo "[D-BUS Service]"
+
+[ "$BUSNAME" != "" ] && echo "Name=$BUSNAME"
+[ "$EXEC" != "" ] && echo "Exec=$EXEC"
+[ "$USER1" != "" ] && echo "User=$USER1"
+
+echo "SystemdService=$(basename $SRVFILE)"

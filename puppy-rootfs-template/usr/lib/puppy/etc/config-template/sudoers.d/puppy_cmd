@@ -1,0 +1,2 @@
+ALL ALL=(ALL) NOPASSWD: /usr/lib/puppy/sbin/snapmergepuppy,/usr/lib/puppy/sbin/snapmergepuppy_overlay
+ALL ALL=(ALL) NOPASSWD: /bin/mount,/bin/umount

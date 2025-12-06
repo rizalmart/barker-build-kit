@@ -1,0 +1,2 @@
+SUBSYSTEM=="block", KERNEL=="sr[0-9]", ATTR{removable}=="1", ATTR{events_poll_msecs}=="-1", ATTR{events_poll_msecs}="5000"
+SUBSYSTEM=="block", KERNEL=="sr[0-9]", ATTR{removable}=="1", ATTR{events_poll_msecs}=="0", ATTR{events_poll_msecs}="5000"

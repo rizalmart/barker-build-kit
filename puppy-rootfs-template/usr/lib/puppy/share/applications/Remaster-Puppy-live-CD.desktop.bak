@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Remaster Puppy
+Icon=puppy-remaster
+Comment=Remaster Puppy live-CD
+Exec=remasterpup2
+Terminal=false
+Type=Application
+Categories=X-Setup-installation
+GenericName=Remaster live-CD

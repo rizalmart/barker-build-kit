@@ -1,0 +1,12 @@
+#!/bin/sh
+#clipboard bridge
+#written by mistfire
+
+WCOMPOSITOR="$(cat /etc/wayland-compositors.list 2>/dev/null | tr '\n' ' ')"
+
+if [ "$(busybox pidof -s Xorg X)" != "" ]; then
+ echo -n $@ | xclip -selection c
+elif [ "$(busybox pidof -s $WCOMPOSITOR 2>/dev/null)" != "" ]; then
+ echo -n $@ | wl-copy
+fi
+

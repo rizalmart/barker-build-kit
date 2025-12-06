@@ -1,0 +1,6 @@
+menuentry "Shutdown computer" {
+  halt
+}
+menuentry "Reboot computer" {
+  reboot
+}

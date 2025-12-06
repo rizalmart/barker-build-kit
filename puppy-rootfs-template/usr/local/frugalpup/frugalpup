@@ -1,0 +1,121 @@
+#!/bin/ash
+
+do_exit() {
+	[ "$CACHE_FN" ] && [ -f "$CACHE_FN" ] && rm "$CACHE_FN"
+	[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+	if [ "$1" ]; then
+		yad $YAD_STD_OPTS --title "FrugalPup v${VER}" --width=220 --text-align=center \
+			--text "${1}" \
+			--button=gtk-ok:0
+	fi
+	exit $2
+}
+
+error_exit() {
+	[ "$CACHE_FN" ] && [ -f "$CACHE_FN" ] && rm "$CACHE_FN"
+	do_exit "$1" 1
+}
+
+normal_exit() {
+	do_exit "$1" 0
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "File <span foreground='purple'>$UTILS_DIR/functions_part</span> not found."
+
+EFI_TAR=''
+if [ -s "$PUP_GRUB/$EFI_FN" ]; then
+	EFI_TAR="$PUP_GRUB/$EFI_FN"
+else
+	[ -s "$EXE_DIR/$EFI_FN" ] && EFI_TAR="$EXE_DIR/$EFI_FN"
+fi
+[ "$EFI_TAR" ] || error_exit "grub2-efi support missing"
+
+MBR_TAR=''
+if [ -s "$PUP_GRUB/$MBR_FN" ]; then
+	MBR_TAR="$PUP_GRUB/$MBR_FN"
+else
+	[ -s "$EXE_DIR/$MBR_FN" ] && MBR_TAR="$EXE_DIR/$MBR_FN"
+fi
+[ "$MBR_TAR" ] || error_exit "grub2-mbr support missing"
+
+if [ ! -e '/usr/share/icons/PuppyStandard' ]; then
+	if [ -e '/usr/share/icons/Puppy Standard' ]; then
+		ln -s 'Puppy Standard' '/usr/share/icons/PuppyStandard'
+	elif [ -e '/usr/share/icons/PMaterial' ]; then
+		ln -s 'PMaterial' '/usr/share/icons/PuppyStandard'
+	fi
+fi
+if [ -d '/usr/share/icons/PuppyStandard' ]; then
+	BOOT_ICON='/usr/share/icons/PuppyStandard/16/actions/gtk-save.svg'
+	ISO_ICON='/usr/share/icons/PuppyStandard/16/devices/cdrom.svg'
+	HELP_ICON='/usr/share/icons/PuppyStandard/16/actions/gtk-help.svg'
+	EXIT_ICON='/usr/share/icons/PuppyStandard/16/actions/application-exit.svg'
+	SET_ICON='/usr/share/icons/PuppyStandard/16/categories/preferences.svg'
+fi
+PUP_ICON="$EXE_DIR/icons/linux.png"
+HELP_FN="$EXE_DIR/doc/index.html"
+
+TMP_LIST="/tmp/${myName}_$$_tmp_list.txt"
+
+[ -f "$TMP_LIST" ] && rm "$TMP_LIST"
+echo "" >> "$TMP_LIST"
+echo "" >> "$TMP_LIST"
+echo "" >> "$TMP_LIST"
+echo "" >> "$TMP_LIST"
+echo "" >> "$TMP_LIST"
+echo "defaulthtmlviewer $HELP_FN" >> "$TMP_LIST"
+echo "$UTILS_DIR/kill-parent-yad settings" >> "$TMP_LIST"
+echo "$UTILS_DIR/kill-parent-yad puppyfiles" >> "$TMP_LIST"
+echo "$UTILS_DIR/kill-parent-yad bootfiles" >> "$TMP_LIST"
+echo "$UTILS_DIR/kill-parent-yad bootcd" >> "$TMP_LIST"
+
+while :; do
+	yad $YAD_STD_OPTS --title "FrugalPup v${VER}" --width=600 --height=400 \
+		--text="This utility installs/manages multiple Puppy frugal installs.
+
+Click the corresponding button to execute a facility.
+" \
+		--form --scroll --columns=2 \
+		--field="<span foreground='blue'>Help</span> button:
+View the help pages for <span foreground='purple'>FrugalPup</span>.:LBL" \
+		--field="<span foreground='blue'>Settings</span> button:
+Modify the config file <span foreground='purple'>$CONFIG_FN</span>.
+Enable/disable the display of optional advanced dialogs,
+<span foreground='purple'>Separate save location</span>, <span foreground='purple'>Kernel boot parameters</span>
+and <span foreground='purple'>Pfix boot parameter</span>.:LBL" \
+		--field="<span foreground='blue'>Puppy</span> button:
+Setup a Puppy frugal install directory with Puppy files.
+Use this facility to create or update a Puppy frugal install directory, with appropriate Puppy release files.:LBL" \
+		--field="<span foreground='blue'>Boot</span> button:
+Setup a boot partition with grub2 files for selected Puppies.
+Use this facility to setup or update the boot configuration files on a fat32 boot partition.
+<span foreground='red'>May overwrite some existing boot files.</span>:LBL" \
+		--field="<span foreground='blue'>BootCD</span> button:
+Create an ISO file with grub2 files to boot selected Puppies.
+This is for older machines that can't boot from a usb stick.
+Use this facility to create a CD/DVD that can boot existing Puppy frugal installs.:LBL" \
+		--field="Help!${HELP_ICON}!View help pages:FBTN" \
+		--field="Settings!${SET_ICON}!Execute frugalpup-settings:FBTN" \
+		--field="Puppy!${PUP_ICON}!Execute frugalpup-puppyfiles:FBTN" \
+		--field="Boot!${BOOT_ICON}!Execute frugalpup-bootfiles:FBTN" \
+		--field="BootCD!${ISO_ICON}!Execute frugalpup-bootlincd:FBTN" \
+		--rest="$TMP_LIST" \
+		--button="Exit!${EXIT_ICON}:3" >/dev/null
+	[ $? -eq 3 ] && break # exit via button
+	if [ -e /tmp/kill-parent-yad-params.txt ]; then # exit via kill-parent-yad script
+		PROG="$(head -n1 /tmp/kill-parent-yad-params.txt)"
+		rm /tmp/kill-parent-yad-params.txt
+		"$EXE_DIR/frugalpup-${PROG}"
+	else # just in case
+		break
+	fi
+done
+
+normal_exit

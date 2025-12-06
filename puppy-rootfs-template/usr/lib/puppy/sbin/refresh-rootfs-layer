@@ -1,0 +1,11 @@
+#!/bin/sh
+
+UNIONFS="$(mount | grep "on / type" | grep "type unionfs")"
+AUFS="$(mount | grep "on / type" | grep "aufs")"
+OVERLAYFS="$(mount | grep "on / type" | grep "overlay")"
+
+sync
+
+[ "$UNIONFS" != "" ] && busybox mount -t unionfs -o remount,udba=reval unionfs /
+[ "$AUFS" != "" ] && busybox mount -t aufs -o remount,udba=reval unionfs /
+[ "$OVERLAYFS" != "" ] && busybox mount -t overlayfs -o remount /

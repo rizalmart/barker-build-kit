@@ -1,0 +1,8 @@
+[Trigger]
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+When = PostTransaction
+Exec = /usr/lib/puppy/sbin/clear-whiteout-files

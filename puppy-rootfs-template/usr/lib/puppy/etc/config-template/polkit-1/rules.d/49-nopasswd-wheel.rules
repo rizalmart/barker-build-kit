@@ -1,0 +1,8 @@
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("wheel") && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+    else if (subject.isInGroup("sudo") && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

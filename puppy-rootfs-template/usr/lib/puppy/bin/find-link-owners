@@ -1,0 +1,54 @@
+#!/bin/sh
+#List packages will clashing files
+#written by mistfire
+
+[ -e /etc/rc.d/PUPSTATE ] && . /etc/rc.d/PUPSTATE
+
+if [ "$PUPMODE" == "" ]; then
+ PREROOT=""
+elif [ $PUPMODE -eq 2 ]; then
+ PREROOT=""
+else
+ PREROOT="/initrd/pup_ro2"
+fi
+
+mkdir -p /tmp/link-owners 2>/dev/null
+
+rm -f /tmp/link-owners/* 2>/dev/null
+
+echo "" > /tmp/pkg-maindb.txt
+echo "building file database..."
+
+for fle1 in $(ls -1 $PREROOT/var/packages/builtin_files | grep -v "^aaa_" | tr '\n' ' ')
+do
+
+ cat $PREROOT/var/packages/builtin_files/$fle1 | grep -E '*\.so*' | sed -e 's#^#'$fle1'|#' >> /tmp/pkg-maindb.txt
+
+done
+
+while IFS= read -r line
+do
+ if [ $line != "" ]; then
+ 
+  MPKG=""
+  linep="$(echo "$line" | sed -e "s#\/#\\\/#" -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#")"
+  dirp="$(echo "$(dirname $line)" | sed -e "s#\/#\\\/#" -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#")"
+  fp="$(echo "$(basename $line)" | sed -e "s#\/#\\\/#" -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#")"
+  fp2="$(echo "$(basename $line)" | sed -e "s#\/#\\\/#" -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#" | sed -e "s#\.so.*\$#\.so#")"
+  
+  realf="$(readlink $line 2>/dev/null | sed -e "s#\/#\\\/#" -e "s#\+#\\\+#" -e "s#\-#\\\-#" -e "s#\.#\\\.#")"
+  realf2="$(echo "$realf" | sed -e "s#\.so.*\$#\.so#")"
+
+  lfound="$(cat /tmp/pkg-maindb.txt | grep -E "\|$realf\$" | head -n 1 | cut -f 1 -d '|')"
+  [ "$lfound" == "" ] && lfound="$(cat /tmp/pkg-maindb.txt | grep -E "\|$realf2" | head -n 1 | cut -f 1 -d '|')"
+  [ "$lfound" == "" ] && lfound="$(cat /tmp/pkg-maindb.txt | grep -E "\/$fp2" | head -n 1 | cut -f 1 -d '|')"
+
+  if [ "$lfound" != "" ]; then
+   MPKG="$(echo "$lfound")"
+   echo "$line" >> /tmp/link-owners/$MPKG
+  fi
+ fi
+
+done < /tmp/unreg-symlinks.txt
+
+echo "analysis complete see /tmp/link-owners"

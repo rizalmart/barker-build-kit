@@ -1,0 +1,25 @@
+#!/bin/bash
+
+cd /tmp
+
+WORKDIR=$(mktemp -d)
+
+cd "$WORKDIR"
+
+echo "Downloading sources..."
+
+# gtkdialog (main branch)
+wget -O gearlever.zip \
+  https://github.com/mijorus/gearlever/archive/refs/heads/master.zip
+
+echo "Extracting..."
+unzip gearlever.zip
+
+echo "Building gtkdialog..."
+cd "gearlever-master"
+meson --buildtype=release --prefix=/usr/local --bindir=/usr/local/bin build
+ninja -C build install
+
+cd /tmp
+
+rm -rf ${WORKDIR}

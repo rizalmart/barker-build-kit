@@ -1,0 +1,56 @@
+#!/bin/bash
+#save and load wifi power state
+
+STATE_DIR="/var/lib/wifi-power-state"
+
+save_state() {
+    
+    [ ! -d "$STATE_DIR" ] && mkdir -p $STATE_DIR
+    
+    # List all Wi-Fi rfkill devices
+    
+    for id in $(rfkill list wifi | grep -E '^[0-9].*:' | cut -f 1 -d ':' | tr '\n' ' ')
+    do
+		
+		STATE_FILE=${STATE_DIR}/$id
+			
+        state=$(rfkill list "$id" | grep -i "Soft blocked" | awk '{print $3}')
+        
+        [ "$state" == "yes" ] && echo "block" > "$STATE_FILE"
+        [ "$state" == "no" ] && echo "unblock" > "$STATE_FILE"
+    
+    done
+    
+}
+
+load_state() {
+  
+   for id in $(rfkill list wifi | grep -E '^[0-9].*:' | cut -f 1 -d ':' | tr '\n' ' ')
+   do
+      
+      STATE_FILE=${STATE_DIR}/$id
+	
+	  if [ -f "$STATE_FILE" ]; then
+
+		 PWRSTATE="$(cat $STATE_FILE | head -n 1)"
+		 
+		 [ "$PWRSTATE" != "" ] && rfkill $PWRSTATE $id	
+	  
+	  fi
+  
+   done
+   
+}
+
+case "$1" in
+    save)
+        save_state
+        ;;
+    load)
+        load_state
+        ;;
+    *)
+        echo "Usage: $0 {save|load}"
+        exit 1
+        ;;
+esac

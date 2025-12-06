@@ -1,0 +1,17 @@
+[Default Applications]
+application/vnd.squashfs=filemnt.desktop;
+application/vnd.efi.img=filemnt.desktop;
+audio/mpeg=org.kde.haruna.desktop;
+audio/aac=org.kde.haruna.desktop;
+audio/vnd.wave=org.kde.haruna.desktop;
+audio/wav=org.kde.haruna.desktop;
+audio/x-wav=org.kde.haruna.desktop;
+audio/x-ms-wma=org.kde.haruna.desktop;
+audio/ogg=org.kde.haruna.desktop;
+audio/aiff=org.kde.haruna.desktop;
+audio/x-aiff=org.kde.haruna.desktop;
+audio/flac=org.kde.haruna.desktop;
+audio/alac=org.kde.haruna.desktop;
+audio/opus=org.kde.haruna.desktop;
+audio/amr=org.kde.haruna.desktop;
+application/vnd.debian.binary-package=gdebi.desktop;org.kde.discover.desktop;org.kde.ark.desktop;

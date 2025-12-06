@@ -1,0 +1,34 @@
+#!/bin/bash
+#this generates xml code for a gtkdialog gui.
+#it is NOT a standalone window
+#
+#the reason for using this template is to control global size
+#
+#usage :
+# xml_scalegrip
+#
+#Sigmund Berglund, Mar 2014
+#GPL
+
+#read config if exist
+if [ -s $HOME/.config/ptheme/gtkdialog_active ] ; then
+	. $HOME/.config/ptheme/gtkdialog_active
+fi
+
+[ ! "$XML_SCALEGRIP_SIZE" ]	&& XML_SCALEGRIP_SIZE=20
+
+if ldd $(which gtkdialog) | grep -iq 'gtk-3' ; then #gtk3
+	GTKDIALOG_MAX_CHARS=' max-width-chars="45"'
+	GTKDIALOG_BUILD="GTK3"
+elif ldd $(which gtkdialog) | grep -iq 'gtk-X11-2' ; then #gtk2
+	GTKDIALOG_MAX_CHARS=''
+	GTKDIALOG_BUILD="GTK2"
+fi
+
+#generate XML code but ignore in gtk3
+[ ! "$GTKDIALOG_BUILD" = 'GTK3' ] && \
+echo "<statusbar  name=\"ScaleGrip\" width-request=\"$XML_SCALEGRIP_SIZE\"></statusbar>" || \
+echo "<text><label>\"\"</label></text>"
+
+# NOTE !
+# to avoid frame around <statusbar>, Gtk-theming is used in ./xml_info

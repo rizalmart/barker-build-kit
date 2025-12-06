@@ -1,0 +1,29 @@
+#!/bin/sh
+#save2flash with cache cleaning
+#written by mistfire
+
+#130807 L18L
+export OUTPUT_CHARSET=UTF-8
+
+. gettext.sh
+
+LANG=$OLDLANG yaf-splash -bg orange -placement top -close never -text "$(gettext "Saving RAM to 'pup_save' file...")" & #130116 set LANG.
+YAFPID=$!
+
+if [ "$(which purge-cache.sh)" != "" ]; then
+ if [ "$(pidof purge-cache.sh)" == "" ]; then
+   purge-cache.sh
+ else
+   while [ "`pidof purge-cache.sh`" != "" ]; do
+      sleep 1
+   done
+ fi
+fi
+
+while [ "`busybox pidof snapmergepuppy`" != "" ]; do
+  sleep 1
+done
+
+sync
+LANG=$OLDLANG nice -n 19 /usr/lib/puppy/sbin/snapmergepuppy
+kill $YAFPID

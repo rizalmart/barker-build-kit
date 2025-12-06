@@ -1,0 +1,49 @@
+#!/bin/sh
+
+EJECT_BIN=/bin/eject
+
+[ -L $EJECT_BIN ] && EJECT_BIN=$(readlink $EJECT_BIN)
+
+if [ "$(file $EJECT_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $EJECT_BIN)" != "busybox" ]; then
+ EJECT_CMD=$EJECT_BIN
+else
+	
+	EJECT_BIN=/bin/eject-FULL
+	
+	[ -L $EJECT_BIN ] && EJECT_BIN=$(readlink $EJECT_BIN)
+
+	if [ "$(file $EJECT_BIN | grep "ELF" | grep "LSB")" != "" ] && [ "$(basename $EJECT_BIN)" != "busybox" ]; then
+	 EJECT_CMD=$EJECT_BIN
+	else
+	 EJECT_CMD="busybox eject"
+	fi
+	
+fi
+
+
+sync
+
+$EJECT_CMD $@
+result=$?
+
+if [ $result -ne 0 ]; then
+ for arg1 in $@
+ do
+   if [ "$(echo "$arg1" | grep "/dev/loop")" != "" ]; then
+    mntpt="$(mount | grep "$arg1" | awk '{print $3}')"
+    if [ "$mntpt" != "" ]; then
+     umount -l "$mntpt"
+     exit $?
+    fi
+   elif [ "$(echo "$arg1" | grep "/dev/")" != "" ]; then
+    mntpt="$(mount | grep "$arg1" | awk '{print $3}')"
+    if [ "$mntpt" != "" ]; then
+     umount -l "$mntpt"
+     exit $?
+    fi
+   elif [ "$(echo "$arg1" | grep "/")" != "" ]; then
+     umount -l "$arg1"
+     exit $?
+   fi
+ done
+fi

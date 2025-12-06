@@ -1,0 +1,140 @@
+<?xml version="1.0"?>
+<!-- Puppy-specific mime info -->
+
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+
+  <mime-type type="application/pet">
+    <comment>PET archive</comment>
+    <glob pattern="*.pet"/>
+
+    <magic priority="100">
+
+      <!-- XZ PET signature at offset 0 -->
+      <match type="string" offset="0" value="\xFD7zXZ"/>
+
+      <!-- Gzip PET signature at offset 0 -->
+      <match type="string" offset="0" value="\x1F\x8B\x08"/>
+
+      <!-- lzma pet compressed -->
+      <match value="\x5D\x00\x00" type="string" offset="0"/>
+
+      <!-- zstd pet compressed -->
+      <match value="\x28\xB5\x2F\xFD" type="string" offset="0"/>
+
+      <!-- bzip pet compressed -->
+      <match type="string" offset="0" value="\x42\x5A\x68"/>
+
+    </magic>
+
+  </mime-type>
+
+  <mime-type type="application/x-ext2-image">
+    <comment>ext2 filesystem in a file</comment>
+    <glob pattern="*.2fs"/>
+    <glob pattern="*.ext2"/>
+  </mime-type>
+
+  <mime-type type="application/x-ext3-image">
+    <comment>ext3 filesystem in a file</comment>
+    <glob pattern="*.3fs"/>
+    <glob pattern="*.ext3"/>
+  </mime-type>
+
+  <mime-type type="application/x-ext4-image">
+    <comment>ext4 filesystem in a file</comment>
+    <glob pattern="*.4fs"/>
+    <glob pattern="*.ext4"/>
+  </mime-type>
+
+  <mime-type type="application/x-btrfs-image">
+    <comment>ext4 filesystem in a file</comment>
+    <glob pattern="*.bfs"/>
+    <glob pattern="*.btrfs"/>
+  </mime-type>
+
+  <mime-type type="application/x-squashfs-image">
+    <comment>squashfs filesystem in a file</comment>
+    <glob pattern="*.sfs"/>
+    <glob pattern="*.squashfs"/>
+  </mime-type>
+
+  <mime-type type="application/x-linux-initramfs">
+	  
+    <comment>Linux Initramfs / Initrd Image</comment>
+
+    <!-- Filename patterns -->
+    <glob pattern="initrd*"/>
+    <glob pattern="initramfs*"/>
+
+    <!-- Magic numbers -->
+
+    <!-- 1. gzip compressed initramfs -->
+    <magic priority="50">
+      <match value="\x1F\x8B\x08" type="string" offset="0"/>
+    </magic>
+
+    <!-- 2. xz compressed initramfs -->
+    <magic priority="45">
+      <match value="\xFD7zXZ\x00" type="string" offset="0"/>
+    </magic>
+
+    <!-- 3. lzma compressed initramfs -->
+    <magic priority="40">
+      <match value="\x5D\x00\x00" type="string" offset="0"/>
+    </magic>
+
+    <!-- 4. zstd compressed initramfs -->
+    <magic priority="35">
+      <match value="\x28\xB5\x2F\xFD" type="string" offset="0"/>
+    </magic>
+
+    <!-- bzip compressed -->
+    <magic priority="50">
+      <match type="string" offset="0" value="\x42\x5A\x68"/>
+    </magic>
+
+    <!-- 5. optional: uncompressed cpio archive -->
+    <magic priority="30">
+      <!-- ASCII cpio "070701" magic for new ASCII cpio -->
+      <match value="070701" type="string" offset="0"/>
+    </magic>
+
+  </mime-type>
+  
+  <mime-type type="application/linux-kernel">
+	  
+    <comment>Linux kernel</comment>
+    
+    <glob pattern="vmlinuz*"/>
+    <glob pattern="bzImage*"/>
+    <glob pattern="kernel*"/>
+
+    <!-- gzip compressed -->
+    <magic priority="50">
+      <match value="\x1F\x8B\x08" type="string" offset="0"/>
+    </magic>
+
+    <!-- xz compressed -->
+    <magic priority="45">
+      <match value="\xFD7zXZ\x00" type="string" offset="0"/>
+    </magic>
+
+    <!-- lzma compressed -->
+    <magic priority="50">
+      <match value="\x5D\x00\x00" type="string" offset="0"/>
+    </magic>
+
+    <!-- zstd compressed -->
+    <magic priority="50">
+      <match value="\x28\xB5\x2F\xFD" type="string" offset="0"/>
+    </magic>
+
+    <!-- bzip compressed -->
+    <magic priority="50">
+      <match type="string" offset="0" value="\x42\x5A\x68"/>
+    </magic>
+
+    
+ </mime-type>
+
+</mime-info>

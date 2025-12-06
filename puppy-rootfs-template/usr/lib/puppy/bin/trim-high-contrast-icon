@@ -1,0 +1,63 @@
+#!/bin/sh
+
+ fld="HighContrast"
+
+ if [ -d /usr/share/icons/$fld/22x22 ]; then
+  
+  if [ ! -L /usr/share/icons/$fld/22x22 ]; then
+	rm -rf /usr/share/icons/$fld/22x22
+	ln -sr /usr/share/icons/$fld/16x16 /usr/share/icons/$fld/22x22
+  fi
+   
+ fi
+
+ if [ -d /usr/share/icons/$fld/24x24 ]; then
+  
+  if [ ! -L /usr/share/icons/$fld/24x24 ]; then
+	rm -rf /usr/share/icons/$fld/24x24
+	ln -sr /usr/share/icons/$fld/16x16 /usr/share/icons/$fld/24x24
+  fi
+  
+ fi
+
+ if [ -d /usr/share/icons/$fld/18x18 ]; then
+
+  if [ ! -L /usr/share/icons/$fld/18x18 ]; then
+	rm -rf /usr/share/icons/$fld/18x18
+	ln -sr /usr/share/icons/$fld/16x16 /usr/share/icons/$fld/18x18
+  fi    
+      
+ fi
+
+ if [ -d /usr/share/icons/$fld/48x48 ]; then
+
+  if [ ! -L /usr/share/icons/$fld/48x48 ]; then
+	rm -rf /usr/share/icons/$fld/48x48
+	ln -sr /usr/share/icons/$fld/32x32 /usr/share/icons/$fld/48x48
+  fi    
+      
+ fi  
+ 
+ 
+ if [ -d /usr/share/icons/$fld/64x64 ]; then
+
+  if [ ! -L /usr/share/icons/$fld/64x64 ]; then
+	rm -rf /usr/share/icons/$fld/64x64
+	ln -sr /usr/share/icons/$fld/32x32 /usr/share/icons/$fld/64x64
+  fi    
+      
+ fi 
+ 
+ if [ -d /usr/share/icons/$fld/256x256 ]; then
+
+  if [ ! -L /usr/share/icons/$fld/256x256 ]; then
+	rm -rf /usr/share/icons/$fld/256x256
+	ln -sr /usr/share/icons/$fld/32x32 /usr/share/icons/$fld/256x256
+  fi    
+      
+ fi  
+ 
+ 
+ find /usr/share/icons/$fld -type d | xargs -i fix-duplicates '{}'
+ 
+

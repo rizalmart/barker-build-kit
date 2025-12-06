@@ -1,0 +1,349 @@
+#!/bin/sh
+#Written by mistfire based from frontend_timeout of pup_event_frontend_d by Barry Kauler
+#Check storage memory and clear cache when needed
+
+[ ! -e /tmp/pup_memory_monitor ] && mkdir -p /tmp/pup_memory_monitor 2>/dev/null
+
+. /etc/rc.d/PUPSTATE
+
+export DISPLAY=:0
+export WAYLAND_DISPLAY="wayland-0"
+
+export INITRD_FLD="/initrd"
+
+[ -L /initrd ] && export INITRD_FLD=$(readlink /initrd 2>/dev/null)
+
+msg_notify(){
+
+MSG="$1"
+ICON="$2"
+
+ if [ "$(which notify-send)" != "" ]; then
+  notify-send -i $ICON -t 5000 "Notice" "$MSG"
+ else
+  killall yaf-splash
+  #yaf-splash -margin 2 -bg red -bw 0 -placement top -font "9x15B" -outline 0 -text "$WARNMSG" &
+  yaf-splash -bg pink -placement top -text "$WARNMSG" &
+ fi	
+	
+}
+
+savepuppy_func() {
+ 
+  #yaf-splash -font "8x16" -outline 0 -margin 4 -bg orange -placement top -text "Saving RAM to 'pup_save' file..." &
+  
+  [ "$(busybox pidof snapmergepuppy)" == "" ] && return
+  
+  if [ "$(which notify-send)" != "" ]; then
+   notify-send -i floppy -u critical "Low working memory space" "Saving RAM to 'pup_save' file..." &
+   YAFPID=$!
+  else
+   killall yaf-splash
+   #yaf-splash -margin 2 -bg red -bw 0 -placement top -font "9x15B" -outline 0 -text "$WARNMSG" &
+   yaf-splash -bg orange -placement top -close never -text "Low working memory space. Saving RAM to 'pup_save' file..." & #130116 set LANG.
+   YAFPID=$!
+  fi	
+  
+   
+   if [ "$(which purge-cache.sh)" != "" ]; then
+    
+    if [ "$(busybox pidof purge-cache.sh)" == "" ]; then
+     purge-cache.sh
+    else
+      while [ "`busybox pidof purge-cache.sh`" != "" ]; do
+       sleep 1
+      done
+    fi
+    
+   fi
+  
+   sync
+   nice -n 19 /usr/lib/puppy/sbin/snapmergepuppy
+   kill $YAFPID 2>/dev/null
+   
+}
+
+#note that init script in initrd takes care of restoring modules if enough space.
+delete_func() { #called from free_func() and free_flash_func(). delete modules to create more free space.
+ 
+ #passed param: /pup_rw=delete tmpfs top layer only.
+ DEL_LAYER=$1
+ 
+ #find out what modules are loaded, keep those...
+ for ONEKEEP_MOD in `lsmod | cut -f 1 -d ' ' | grep -v 'Module'`
+ do
+  ONEKEEP_SPEC="`modinfo -F filename ${ONEKEEP_MOD}`"
+  ONEKEEP_PATH="`dirname $ONEKEEP_SPEC`"
+  mkdir -p /tmp${ONEKEEP_PATH}
+  cp -af ${ONEKEEP_SPEC} /tmp${ONEKEEP_PATH}/
+ done
+ 
+ if [ "$DEL_LAYER" != "" ];then
+  rm -rf ${DEL_LAYER}/lib/modules
+ else
+  [ $PUPMODE -eq 3 -o $PUPMODE -eq 7 -o $PUPMODE -eq 13 ] && rm -rf ${SAVE_LAYER}/lib/modules
+  rm -rf /lib/modules
+ fi
+ 
+ cp -af /tmp/lib/modules /lib/modules
+ depmod -a
+ 
+}
+
+free_initrd_func() { #UniPup, runs entirely in initramfs.
+	
+ #110405 fix for later versions busybox...
+ memFREEK=`free | grep -o 'Mem: .*' | tr -s ' ' | cut -f 4 -d ' '`
+ swapFREEK=`free | grep -o 'Swap: .*' | tr -s ' ' | cut -f 4 -d ' '`
+ SIZEFREEK=`expr $memFREEK + $swapFREEK`
+ SIZEFREEM=`expr $SIZEFREEK \/ 1024`
+ 
+ WARNMSG=""
+ 
+ [ -s /tmp/pup_memory_monitor/sizefreem ] && PREVSIZEFREEM=`cat /tmp/pup_memory_monitor/sizefreem 2>/dev/null`
+ 
+ [ "$PREVSIZEFREEM" == "$SIZEFREEM" ] && return
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+ 
+   [ -d ${INITRD_FLD}/pup_rw/lib/modules/all-firmware -a "$ZDRVINIT" = "yes" ] && delete_func ${INITRD_FLD}/pup_rw 
+ 
+   if [ "$(which purge-cache.sh)" != "" ]; then
+    [ "$(busybox pidof purge-cache.sh)" == "" ] && purge-cache.sh
+   fi
+   
+   memFREEK=`free | grep -o 'Mem: .*' | tr -s ' ' | cut -f 4 -d ' '`
+   swapFREEK=`free | grep -o 'Swap: .*' | tr -s ' ' | cut -f 4 -d ' '`
+   SIZEFREEK=`expr $memFREEK + $swapFREEK`
+   SIZEFREEM=`expr $SIZEFREEK \/ 1024`
+   
+ fi
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+   WARNMSG="WARNING: Personal storage getting full, strongly recommend you resize it or delete files!" #130208
+   msg_notify "$WARNMSG" cancel
+ fi
+ 
+ #save to a file, freememapplet can read this...
+ echo "$SIZEFREEM" > /tmp/pup_memory_monitor/sizefreem
+  
+}
+
+free_func() { #called every 4 seconds.
+	
+ case $PUPMODE in
+  6|12)
+   if [ -L ${INITRD_FLD}/pup_rw ]; then
+    SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/mnt/dev_save$' | tr -s ' ' | cut -f 4 -d ' '`
+   else
+    SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/pup_rw$' | tr -s ' ' | cut -f 4 -d ' '`
+   fi
+  ;;
+  *)
+   SIZEFREEM=`df -m | grep ' /$' | head -n 1 | tr -s ' ' | cut -f 4 -d ' '` #110509 rerwin: insert head -n 1
+  ;;
+ esac
+ 
+ WARNMSG=""
+ 
+ [ -s /tmp/pup_memory_monitor/sizefreem ] && PREVSIZEFREEM=`cat /tmp/pup_memory_monitor/sizefreem 2>/dev/null`
+ 
+ [ "$PREVSIZEFREEM" == "$SIZEFREEM" ] && return
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+ 
+   [ -d ${INITRD_FLD}/pup_rw/lib/modules/all-firmware -a "$ZDRVINIT" = "yes" ] && delete_func ${INITRD_FLD}/pup_rw
+ 
+   if [ "$(which purge-cache.sh)" != "" ]; then
+    
+    msg_notify "Low disk space. System cleanup started..." gtk-refresh
+    
+    [ "$(busybox pidof purge-cache.sh)" == "" ] && purge-cache.sh
+     
+   fi
+   
+   case $PUPMODE in
+   6|12)
+    if [ -L ${INITRD_FLD}/pup_rw ]; then
+	 SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/mnt/dev_save$' | tr -s ' ' | cut -f 4 -d ' '`
+    else
+	 SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/pup_rw$' | tr -s ' ' | cut -f 4 -d ' '`
+    fi
+   ;;
+   *)
+     SIZEFREEM=`df -m | grep ' /$' | head -n 1 | tr -s ' ' | cut -f 4 -d ' '` #110509 rerwin: insert head -n 1
+   ;;
+   esac
+   
+ fi
+ 
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+   if [ $PUPMODE -eq 2 ]; then
+    WARNMSG="System storage getting full! Strongly recommend to delete unneeded files!" #130208
+   else
+    WARNMSG="WARNING: Personal storage getting full, strongly recommend you resize it or delete files!" #130208
+   fi
+ fi
+ 
+ VIRTUALFREEM=$SIZEFREEM
+ 
+ if [ "$ZDRVINIT" == "yes" ];then #full set of modules present, moved from initrd.
+  
+  if [ -d ${INITRD_FLD}/pup_rw/lib/modules/all-firmware ];then #have not yet deleted modules.
+   #calc the "virtual" free space (would have if modules not there...)
+   VIRTUALFREEM=`expr $SIZEFREEM + $SIZE_MODS_M`
+   VIRTUALFREEM=`expr $VIRTUALFREEM - 1` #allow for some mods will not be deleted.
+  fi
+  
+ fi
+ 
+ #save to a file, freememapplet can read this...
+ echo "$VIRTUALFREEM" > /tmp/pup_memory_monitor/sizefreem
+ 
+ if [ "$WARNMSG" != "" ];then
+  msg_notify "$WARNMSG" cancel
+ fi
+ 
+}
+
+free_flash_func() { #PUPMODE 3,7,13. called every 4 seconds.
+	
+ WARNMSG=""
+ 
+ if [ -L ${INITRD_FLD}/pup_ro1 ]; then
+  SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/mnt/dev_save$' | tr -s ' ' | cut -f 4 -d ' '`
+ else
+  SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/pup_ro1$' | tr -s ' ' | cut -f 4 -d ' '`
+ fi
+ 
+ SIZETMPM=`df -m | grep ' '${INITRD_FLD}'/pup_rw$' | tr -s ' ' | cut -f 4 -d ' '`
+ 
+ [ -s /tmp/pup_memory_monitor/sizefreem ] && PREVSIZEFREEM=`cat /tmp/pup_memory_monitor/sizefreem 2>/dev/null`
+ 
+ [ -s /tmp/pup_memory_monitor/sizetmpm ] && PREVSIZETMPM=`cat /tmp/pup_memory_monitor/sizetmpm 2>/dev/null`
+ 
+ [ $PREVSIZEFREEM -eq $SIZEFREEM -a $PREVSIZETMPM -eq $SIZETMPM ] && return
+ 
+ 
+ if [ $SIZETMPM -lt 64 ];then
+  
+  [ -d ${INITRD_FLD}/pup_rw/lib/modules/all-firmware -a "$ZDRVINIT" = "yes" ] && delete_func ${INITRD_FLD}/pup_rw 
+  
+  savepuppy_func
+  
+  SIZETMPM=`df -m | grep ' '${INITRD_FLD}'/pup_rw$' | tr -s ' ' | cut -f 4 -d ' '`
+  
+ fi 
+ 
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+ 
+    [ -d ${INITRD_FLD}/pup_ro1/lib/modules/all-firmware -a "$ZDRVINIT" = "yes" ] && delete_func ${INITRD_FLD}/pup_ro1 
+ 
+    if [ "$(which purge-cache.sh)" != "" ]; then
+     [ "$(busybox pidof purge-cache.sh)" == "" ] && purge-cache.sh ${INITRD_FLD}/pup_ro1 
+    fi
+ 
+    if [ -L ${INITRD_FLD}/pup_ro1 ]; then
+     SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/mnt/dev_save$' | tr -s ' ' | cut -f 4 -d ' '`
+    else
+     SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/pup_ro1$' | tr -s ' ' | cut -f 4 -d ' '`
+    fi
+ 
+ fi
+ 
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+   WARNMSG="WARNING: Personal storage file getting full, strongly recommend you resize it or delete files!" #130208
+ fi
+ 
+ 
+ if [ $SIZETMPM -lt 64 ];then 
+   WARNMSG="WARNING: RAM working space only ${SIZETMPM}MB, recommend a reboot which will flush the RAM"
+ fi
+ 
+ VIRTUALFREEM=$SIZEFREEM
+ 
+ if [ "$ZDRVINIT" == "yes" ];then #full set of modules present at bootup.
+  if [ -d ${INITRD_FLD}/pup_ro1/lib/modules/all-firmware ];then #have not yet deleted modules.
+   #calc the "virtual" free space (would have if modules not there...)
+   VIRTUALFREEM=`expr $SIZEFREEM + $SIZE_MODS_M`
+   VIRTUALFREEM=`expr $VIRTUALFREEM - 1` #allow for some mods will not be deleted.
+  fi
+ fi
+ 
+ echo "$SIZETMPM" > /tmp/pup_memory_monitor/sizetmpm
+ 
+ #save to a file, freememapplet can read this...
+ echo "$VIRTUALFREEM" > /tmp/pup_memory_monitor/sizefreem
+ 
+ if [ "$WARNMSG" != "" ];then
+  msg_notify "$WARNMSG" cancel
+ fi
+ 
+}
+
+free_rw_func() { #PUPMODE 5 called every 4 seconds.
+	
+ WARNMSG=""
+ 
+ SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/pup_rw$' | tr -s ' ' | cut -f 4 -d ' '`
+ 
+ [ -s /tmp/pup_memory_monitor/sizefreem ] && PREVSIZEFREEM=`cat /tmp/pup_memory_monitor/sizefreem 2>/dev/null`
+ 
+ [ "$PREVSIZEFREEM" == "$SIZEFREEM" ] && return
+ 
+ if [ $SIZEFREEM -lt 64 ];then
+  
+  [ -d ${INITRD_FLD}/pup_rw/lib/modules/all-firmware -a "$ZDRVINIT" = "yes" ] && delete_func ${INITRD_FLD}/pup_rw 
+  
+  if [ "$(which purge-cache.sh)" != "" ]; then
+   [ "$(busybox pidof purge-cache.sh)" == "" ] && purge-cache.sh ${INITRD_FLD}/pup_rw
+  fi
+  
+  SIZEFREEM=`df -m | grep ' '${INITRD_FLD}'/pup_rw$' | tr -s ' ' | cut -f 4 -d ' '`
+  
+ fi 
+  
+  
+ if [ $SIZEFREEM -lt 64 ];then 
+   WARNMSG="WARNING: RAM working space only ${SIZETMPM}MB, recommend a reboot which will flush the RAM"
+ fi
+ 
+ 
+ VIRTUALFREEM=$SIZEFREEM
+ 
+ if [ "$ZDRVINIT" == "yes" ];then #full set of modules present at bootup.
+  if [ -d ${INITRD_FLD}/pup_ro1/lib/modules/all-firmware ];then #have not yet deleted modules.
+   #calc the "virtual" free space (would have if modules not there...)
+   VIRTUALFREEM=`expr $SIZEFREEM + $SIZE_MODS_M`
+   VIRTUALFREEM=`expr $VIRTUALFREEM - 1` #allow for some mods will not be deleted.
+  fi
+ fi
+ 
+ #save to a file, freememapplet can read this...
+ echo "$VIRTUALFREEM" > /tmp/pup_memory_monitor/sizefreem
+ 
+ if [ "$WARNMSG" != "" ];then
+  msg_notify "$WARNMSG" cancel
+ fi
+ 
+}
+
+
+#monitor free memory, periodic save of tmpfs top layer...
+ case $PUPMODE in
+  3|7|13)
+   free_flash_func
+  ;;
+  16|24|17|25) #unipup.
+   free_initrd_func
+  ;;
+  5)
+   free_rw_func
+  ;;
+  *)   
+   free_func
+  ;;
+ esac

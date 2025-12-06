@@ -1,0 +1,206 @@
+#!/bin/sh
+
+export XDG_SESSION_TYPE=wayland
+
+export MOZ_ENABLE_WAYLAND=1
+
+export GDK_BACKEND=wayland
+export COGL_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland
+export QT_QUICK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export _JAVA_AWT_WM_NONREPARENTING=1
+export CLUTTER_BACKEND=wayland
+
+export ELM_DISPLAY=wl
+
+[ "$(whoami)" == "root" ] && export WF_USE_UNSAFE=1
+
+reset_monitor_settings() {
+
+for xfcepath in $HOME/.config/xfce4 $HOME/.config/xfce
+do
+
+ if [ -e $xfcepath/xfconf/xfce-perchannel-xml/displays.xml ]; then
+echo '<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="displays" version="1.0">
+  <property name="Notify" type="bool" value="true"/>
+</channel>' > $xfcepath/xfconf/xfce-perchannel-xml/displays.xml
+ fi
+
+done
+
+rm -f $HOME/.screenlayout/* 2>/dev/null
+rm -f $HOME/.config/monitors.xml 2>/dev/null
+rm -f $HOME/.kde/share/apps/kscreen/* 2>/dev/null
+rm -f $HOME/.kde/local/share/apps/kscreen/* 2>/dev/null
+rm -f $HOME/.kde/share/config/krandrc 2>/dev/null
+rm -f $HOME/.kde4/share/apps/kscreen/* 2>/dev/null
+rm -f $HOME/.kde4/local/share/apps/kscreen/* 2>/dev/null
+rm -f $HOME/.kde4/share/config/krandrc 2>/dev/null
+rm -f $HOME/.local/share/kscreen/* 2>/dev/null
+rm -f $HOME/.zarfy/* 2>/dev/null
+rm -f $HOME/.config/autostart/lxrandr-autostart.desktop 2>/dev/null
+
+sed -i -e '/^output [^ ]\+ {/,/^}/d' $HOME/.config/sway/config 2>/dev/null
+sed -i -e '/\[output\]/,/^\[/{/^\[/!d}' $HOME/.config/weston.ini 2>/dev/null
+sed -i -e '/\[output:/,/^\[/{/^\[/!d}' $HOME/.config/wayfire.ini 2>/dev/null
+sed -i -e '/monitor=.*/d' $HOME/.config/hypr/hyprland.conf 2>/dev/null
+		
+}
+
+get_edid_hash() {
+
+for medid in $(ls -1 /sys/class/drm/*/edid 2>/dev/null | grep "card" | grep "-")
+do
+ 
+ sc1="$(dirname $medid)/status"
+ 
+ if [ "$(cat $sc1)" == "connected" ]; then
+  md5sum $medid
+ fi
+ 
+done
+		
+}
+
+config_video() {
+	
+if [ ! -f /var/hwdata/screen.lst ]; then
+ xConfig=1
+elif [ ! -f /var/hwdata/videocards.lst ]; then
+ xConfig=1
+else
+ xConfig=0
+fi	
+
+if [ $xConfig -eq 0 ]; then
+
+    vlist="$(busybox lspci | grep "Class 03" | cut -c 21-29 | sort)"
+    ocard="$(cat /var/hwdata/videocards.lst 2>/dev/null)"
+    
+    #Check if video card change
+    if [ "$vlist" != "$ocard" ]; then
+      #Video card change. Remember videocard
+      #echo "$vlist" > /var/hwdata/videocards.lst
+      xConfig=1
+    else
+     xScreens="$(get_edid_hash)"
+     oScreens="$(cat /var/hwdata/screen.lst 2>/dev/null)"
+      #Check if screen doesn't change
+       if [ "$xScreens" != "$oScreens" ]; then
+         #Screen setup changed. Remember screen setup
+         #echo "$xScreens" > /var/hwdata/screen.lst
+	     xConfig=1
+       fi
+    fi
+    
+fi
+
+if [ $xConfig -ne 0 ]; then
+  reset_monitor_settings
+fi
+	
+}
+
+if [ "$(uname -m | grep -E "[i|x]*86")" != "" ] || [ "$(uname -m)" == "x86_64" ]; then
+ config_video
+fi
+
+WC_PATH="/etc/wayland-compositor"
+
+[ -f "$XDG_CONFIG_HOME/wayland-compositor" ] && WC_PATH="$XDG_CONFIG_HOME/wayland-compositor"
+
+CURRENTWM="`cat $WC_PATH 2>/dev/null`"
+
+case $CURRENTWM in
+*xfce*) DE2=XFCE; DE=xfce ;;
+*lxde*) DE2=LXDE; DE=lxde ;;
+*gnome*) DE2=GNOME; DE=gnome ;;
+*lxqt*) DE2=LXQT; DE=lxqt ;;
+*kde*) DE2=KDE; DE=kde ;;
+*mate*) DE2=MATE; DE=mate ;;
+*cinnamon*) DE2=Cinnamon; DE=cinnamon ;;
+*deepin*) DE2=deepin; DE=deepin ;;
+enlightenment) DE2=enlightenment; DE=enlightenment;;
+Hyprland|hyprland|hyperland) DE2="Hyprland"; DE=generic ;;
+esac
+
+[ -f /etc/desktop_app ] && read -r desktop < /etc/desktop_app
+
+[ "$desktop" = "" ] && desktop=rox
+
+export XDG_CURRENT_DESKTOP="$DE2"
+export DE
+export DESKTOP_SESSION="$DE"
+
+#xhost +SI:localuser:root &
+#xhost +SI:localuser:$(id -un) &
+
+# start a D-Bus session bus for both root and spot, for PulseAudio and applications that don't work without it
+#eval `dbus-launch --exit-with-session --sh-syntax`
+
+if type pcmanfm >/dev/null 2>&1 ; then
+	rm -f $HOME/.cache/menu-cached* $HOME/.cache/pcmanfm* $HOME/.cache/menus/*
+fi
+
+if [ "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] ; then
+	find "$XDG_RUNTIME_DIR" -not -type d -delete
+fi
+
+killall -9 pup_event_frontend_d 2>/dev/null
+
+start-audio-server 2>/dev/null &
+
+pup_event_frontend_d & #130525 moved down.
+
+case $CURRENTWM in
+ kde|startkde)
+   execwm1="startplasma-wayland"
+   waycomp="kwin"
+   ;;
+ gnome|gnome-session)
+   execwm1="gnome-shell"
+   execparam="--wayland"
+   waycomp="mutter"
+   ;;
+ xfce|xfce4|xfce4-session)
+   execwm1="startxfce4"
+   execparam="--wayland"
+   waycomp="labwc"
+   ;;
+ mate|mate-session) execwm1="mate-session";;
+ lxqt) execwm1="lxqt-session";;
+ cinnamon|cinnamon-session)
+     execwm1="cinnamon-session"
+     execparam="--session cinnamon-wayland"
+     waycomp="muffin"
+   ;;
+ enlightenment)
+     execwm1="enlightenment_start"
+     execparam="-wl"
+     waycomp="enlightenment"
+   ;;
+ Hyprland|hyperland|hyprland) 
+     execwm1="Hyprland"
+     [ "$(whoami)" == "root" ] && execparam="--i-am-really-stupid"
+     waycomp="Hyprland"
+   ;;
+ weston)
+	 execwm1="weston"
+	 execparam="--xwayland"
+	 waycomp="weston"  
+   ;; 
+esac
+
+[ "$waycomp" == "" ] && waycomp="$CURRENTWM"
+[ "$execwm1" == "" ] && execwm1="$CURRENTWM"
+
+echo $waycomp > /tmp/current-wayland-compositor
+
+if [ "$execwm1" != "" ]; then
+ if [ "$(which $execwm1)" != "" ]; then
+  exec dbus-launch --exit-with-session --sh-syntax $execwm1 $execparam
+ fi
+fi

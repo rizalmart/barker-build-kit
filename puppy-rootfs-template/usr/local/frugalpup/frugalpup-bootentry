@@ -1,0 +1,235 @@
+#!/bin/ash
+
+export TEXTDOMAIN=frugalpup
+export OUTPUT_CHARSET=UTF-8
+
+error_exit() {
+	[ "$1" ] && echo "$1"
+	[ "$DID_MOUNT" ] && umount "$BOOT_MP"
+	exit 1
+}
+
+write_line() {
+	if [ "$2" ]; then
+		echo "$1" >> "$2"
+	else
+		echo "$1"
+	fi
+}
+
+myName="${0##*/}"
+[ -e "/tmp/${myName}_debug_flag" ] && set -x && exec &> "/tmp/${myName}_$$.log"
+
+EXE_DIR="$(dirname $(readlink -f ${0}))"
+COMN_FN="$EXE_DIR/frugalpup-common"
+[ -f "$COMN_FN" ] && . "$COMN_FN"
+
+if [ $# -lt 1 -o "$1" = "-h" -o "$1" = "--help" ]; then
+	SHBASE="`basename $0`"
+	SHBASE="${SHBASE#*-}"
+	echo "${SHBASE} v${VER}"
+	echo "$(gettext 'Generate Puppy boot config file entry/entries like FrugalPup.')"
+	echo ""
+	echo "$(gettext 'Usage:') $SHBASE  $(gettext 'install-directory [boot-type] [output-directory]')"
+	echo "$(gettext 'If <install-directory> is the parent of a number of installs,')"
+	echo "    $(gettext 'many boot enties will be generated.')"
+	echo "$(gettext "<boot-type> can be \"g4dos|grub2|fs\".")"
+	echo "$(gettext "if <boot-type> is omitted, \"grub2\" is assumed.")"
+	echo "$(gettext "if <boot-type> is \"fs\", then a \"grub2\" \"insmod\" for the fs-type, is included.")"
+	echo "$(gettext 'If <output-directory> is specified,')"
+	echo "    $(gettext "the entries will be appended to \"grub.cfg\"")"
+	echo "    $(gettext "or \"menu.lst\" in that directory.")"
+	echo "$(gettext 'If <output-directory> is not specified,')"
+	echo "    $(gettext 'the entries will be written to STDOUT, usually displayed on the console.')"
+	echo ""
+	echo "$(gettext 'Examples:')"
+	echo " $SHBASE /mnt/home/puppy/tahr"
+	echo " $SHBASE /mnt/home/puppy/tahr fs"
+	echo " $SHBASE /mnt/home/puppy/tahr g4dos"
+	echo " $SHBASE /mnt/home/puppy /mnt/sdc1"
+	echo " $SHBASE /mnt/home/puppy fs /mnt/sdc1"
+	echo " $SHBASE /mnt/home/puppy g4dos /mnt/sdc1"
+	exit 1
+fi
+
+[ -f "$UTILS_DIR/functions_part" ] || error_exit "$(printf "$(gettext "File \"%s\" not found")" "${UTILS_DIR}/functions_part")"
+. "$UTILS_DIR/functions_part"
+
+[ -d "$1" ] || error_exit "$(printf "$(gettext "Directory \"%s\" not found")" "$1")"
+
+PUPS="$(find "$1" -maxdepth 2 -type f -name 'puppy_*.sfs' | sort)"
+[ "$PUPS" ] || error_exit "$(gettext 'No Puppy frugal installs found in') \"$1\""
+shift
+
+AUTOSAVE=''
+DO_GRUB2='yes'
+DO_G4DOS=''; DO_FS=''
+if [ "$1" ]; then
+	case "$1" in
+		grub2)
+			DO_GRUB2='yes'
+			shift
+			;;
+		g4dos)
+			DO_G4DOS='yes'
+			DO_GRUB2=''
+			shift
+			;;
+		grub4dos)
+			DO_G4DOS='yes'
+			DO_GRUB2=''
+			shift
+			;;
+		modules)
+			DO_FS='yes'
+			shift
+			;;
+		fs)
+			DO_FS='yes'
+			shift
+			;;
+		*)
+			[ -d "$1" ] || error_exit "\"$1\" $(gettext 'is not a valid boot-type')"
+			;;
+	esac
+fi
+
+REDIR_M=''; REDIR_G=''
+if [ "$1" ]; then
+	REDIR_M="${1}/menu.lst"
+	REDIR_G="${1}/grub.cfg"
+fi
+
+DID_MOUNT=''
+
+# add TZ boot parameter from running system
+TZspec=''
+if [ -x "$UTILS_DIR/timezone-tz" ]; then
+	P_TZ="$("$UTILS_DIR/timezone-tz")"
+	[ "$P_TZ" ] && TZspec=" TZ=$P_TZ"
+fi
+
+FIRST='yes'
+for ONE_PUP in $PUPS; do
+	PUP_DIR="$(realpath ${ONE_PUP%/*})"
+	[ -e "$PUP_DIR/vmlinuz" ] || continue;
+	if [ "$FIRST" ]; then
+		FIRST=''
+		SRC_MP="$(stat -Lc %m $ONE_PUP)"
+		SRC_PART="$(grep "$SRC_MP" /proc/mounts | cut -f1 -d' ')"; SRC_PART="${SRC_PART#/dev/}"
+		get_device "$SRC_PART"
+		P_MEDIA1='ata'
+		[ "$(probedisk -type "/dev/$get_device_RET" | grep 'usb')" ] && P_MEDIA1='usb'
+		P_MEDIA2='hd'
+		if [ -f /sys/block/$get_device_RET/removable ]; then
+			read REMOV < /sys/block/$get_device_RET/removable
+			[ "$REMOV" = "1" ] && P_MEDIA2='flash'
+		fi
+		if [ -f /sys/block/$get_device_RET/queue/rotational ]; then
+			read ROTATE < /sys/block/$get_device_RET/queue/rotational
+		fi
+		BLK_LINE="$(blkid /dev/$SRC_PART)"
+		SRC_LABEL="${BLK_LINE#*LABEL=\"}"
+		[ "${SRC_LABEL:0:1}" = "/" ] && SRC_LABEL='' || SRC_LABEL="${SRC_LABEL%%\"*}"
+		SRC_UUID="${BLK_LINE#*UUID=\"}"
+		[ "${SRC_UUID:0:1}" = "/" ] && SRC_UUID='' || SRC_UUID="${SRC_UUID%%\"*}"
+		if [ "$SRC_LABEL" ]; then
+			SRC_ID="$SRC_LABEL"
+		else
+			SRC_ID="$SRC_UUID"
+		fi
+		SRC_TYPE="${BLK_LINE#*TYPE=\"}"
+		[ "${SRC_TYPE:0:1}" = "/" ] && SRC_TYPE='' || SRC_TYPE="${SRC_TYPE%%\"*}"
+		[ "$SRC_TYPE" = "f2fs" ] && P_MEDIA2='hd'
+		[ "${SRC_TYPE:0:3}" = "ext" ] && P_MEDIA2='hd'
+		GRUB_MOD=''
+		if [ "$DO_GRUB2" ]; then
+			if [ "$DO_FS" ]; then
+				if [ "$SRC_TYPE" ]; then
+					case $SRC_TYPE in
+						ext4) GRUB_MOD='ext2' ;;
+						ext3) GRUB_MOD='ext2' ;;
+						vfat) GRUB_MOD='fat' ;;
+						*) GRUB_MOD="$SRC_TYPE" ;;
+					esac
+				fi
+			fi
+		fi
+#		if [ "$LANG" ]; then
+#			PLANGspec=" plang=$LANG"
+#		else
+			PLANGspec=''
+#		fi
+	fi
+	PUP_SUB="${PUP_DIR#${SRC_MP}}"
+	PUP_VER="${ONE_PUP##*/}"; PUP_VER="${PUP_VER#puppy_}"; PUP_VER="${PUP_VER%.sfs}"
+	PSAVEID=''; PSAVEDIR=''; SAVEspec=''; SUBspec=''; PKNLPARMS=''; PFIXPARMS=''; PARMSspec=''; PFIXspec=''
+	[ -s "$PUP_DIR/$PARMS_FN" ] && . "$PUP_DIR/$PARMS_FN"
+	[ "$PKNLPARMS" ] && PARMSspec=" ${PKNLPARMS}"
+	[ "$PFIXPARMS" ] && PFIXspec=" pfix=${PFIXPARMS}"
+	if [ "$ROTATE" != "0" -a "$PSAVEID" ]; then 
+		BLK_LINE="$(busybox blkid | grep "$PSAVEID")"
+		SAVE_PART="${BLK_LINE%%:*}"; SAVE_PART="${SAVE_PART#/dev/}"
+		get_device "$SAVE_PART"
+		if [ -f /sys/block/$get_device_RET/queue/rotational ]; then
+			read ROTATE < /sys/block/$get_device_RET/queue/rotational
+		fi
+	fi
+	SFS_PART_BPN='pdrv'
+	[ "$PUP_SUB" ] && SUBspec=" psubdir=${PUP_SUB}"
+	if [ "$PFIXspec" = "" ]; then
+		if [ "$ROTATE" = "0" ]; then
+			PFIXspec=' pfix=fsck,fsckp,trim'
+		else
+			PFIXspec=' pfix=fsck,fsckp'
+		fi
+	fi
+	if [ "$PSAVEID" ]; then
+		SAVEspec=" psave=${PSAVEID}"
+		[ "$PSAVEDIR" ] && SAVEspec="${SAVEspec}:${PSAVEDIR}/"
+	fi
+	INITRD_FN='initrd.gz'
+	[ -e "$PUP_DIR/initrd.xz" ] && INITRD_FN='initrd.xz'
+	[ "$PUP_VER" = "upupbb_19.03" ] && PUP_VER='bionicpup32_8.0'
+	if [ "$DO_GRUB2" ]; then
+		microCode='ucode.cpio'
+		XTRA_RD='local-initrd.gz'
+		write_line "menuentry \"Puppy ${PUP_VER/_/ }\" {" "$REDIR_G"
+		if [ "$DO_FS" ]; then
+			[ "$GRUB_MOD" ] && write_line "  insmod $GRUB_MOD" "$REDIR_G"
+		fi
+		write_line "  set bootid=$SRC_UUID" "$REDIR_G"
+		write_line "  search --no-floppy --fs-uuid --set=root \${bootid}" "$REDIR_G"
+		write_line "  echo \"Loading vmlinuz\"" "$REDIR_G"
+		write_line "  linux $PUP_SUB/vmlinuz${PARMSspec} pmedia=${P_MEDIA1}${P_MEDIA2} pdrv=${SRC_ID}${SUBspec}${SAVEspec}${PFIXspec}${PLANGspec}${TZspec}" "$REDIR_G"
+		write_line "  if [ -e $PUP_SUB/$XTRA_RD ]; then" "$REDIR_G"
+		write_line "    set local_rd=$PUP_SUB/$XTRA_RD" "$REDIR_G"
+		write_line "  else" "$REDIR_G"
+		write_line "    set local_rd=" "$REDIR_G"
+		write_line "  fi" "$REDIR_G"
+		write_line "  if [ -e $PUP_SUB/$microCode ]; then" "$REDIR_G"
+		write_line "    set ucode_rd=$PUP_SUB/$microCode" "$REDIR_G"
+		write_line "    echo \"Loading $microCode and $INITRD_FN\"" "$REDIR_G"
+		write_line "  else" "$REDIR_G"
+		write_line "    set ucode_rd=" "$REDIR_G"
+		write_line "    echo \"Loading $INITRD_FN\"" "$REDIR_G"
+		write_line "  fi" "$REDIR_G"
+		write_line "  initrd \${ucode_rd} $PUP_SUB/$INITRD_FN \${local_rd}" "$REDIR_G"
+		write_line "}" "$REDIR_G"
+	fi
+	if [ "$DO_G4DOS" ]; then
+		write_line "title Puppy ${PUP_VER/_/ }" "$REDIR_M"
+		write_line "  find --set-root --ignore-floppies uuid () $SRC_UUID" "$REDIR_M"
+		if [ "$SRC_LABEL" ]; then
+			write_line "  kernel $PUP_SUB/vmlinuz${PARMSspec} pmedia=${P_MEDIA1}${P_MEDIA2} ${SFS_PART_BPN}=${SRC_LABEL}${SUBspec}${SAVEspec}${PFIXspec}${PLANGspec}${TZspec}" "$REDIR_M"
+		else
+			write_line "  kernel $PUP_SUB/vmlinuz${PARMSspec} pmedia=${P_MEDIA1}${P_MEDIA2} ${SFS_PART_BPN}=${SRC_UUID}${SUBspec}${SAVEspec}${PFIXspec}${PLANGspec}${TZspec}" "$REDIR_M"
+		fi
+		write_line "  initrd $PUP_SUB/$INITRD_FN" "$REDIR_M"
+		write_line "" "$REDIR_M"
+	fi
+done
+
+[ "$DID_MOUNT" ] && umount "$BOOT_MP"
+
+exit 0

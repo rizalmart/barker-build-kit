@@ -1,0 +1,17 @@
+#!/bin/sh
+for bf1 in $(find /var/packages/builtin_files/ -type f -name '*')
+do
+ if [ "$(echo "$bf1" | grep -E "cups|mtpaint|ffconvert|frugalpup")" == "" ]; then
+  sed -i -e '/\/man\//d' $bf1
+  sed -i -e '/\/doc\//d' $bf1
+  sed -i -e '/\/include\//d' $bf1
+  sed -i -e '/\/src\//d' $bf1
+  sed -i -e '/\/info\//d' $bf1
+  sed -i -e '/\/licenses\//d' $bf1
+  sed -i -e '/\/gtk\-doc\//d' $bf1
+  sed -i -e '/\/share\/locale\//d' $bf1
+  sed -i -e '/\/gir\-1\.0\//d' $bf1
+  sed -i -e '/.*\.la$/d' $bf1
+  sed -i -e '/.*\.a$/d' $bf1
+ fi
+done

@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Notify PUPSTATE
+Exec=notify-pupstate

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories=Application;Settings;
+Comment=Settings Tool for WINE.
+Encoding=UTF-8
+Exec=winecfg
+Icon=winecfg
+Name=Wine Configuration
+Terminal=false
+Type=Application

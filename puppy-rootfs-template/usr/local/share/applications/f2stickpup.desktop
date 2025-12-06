@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=f2StickPup - f2fs usb stick installer
+Comment=f2fs usb stick installer
+Exec=f2stickpup
+Icon=gnibbles
+Terminal=false
+Type=Application
+Categories=X-Setup-installation;
+GenericName=f2StickPup

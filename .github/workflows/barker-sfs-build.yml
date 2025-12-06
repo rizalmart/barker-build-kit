@@ -24,7 +24,8 @@ jobs:
             squashfs-tools wget xz-utils ca-certificates binutils \
             wget kmod curl
 
-      - name: Building main sfs file 
+      - name: Building main sfs file
+        shell: bash
         run: |
         
               . ./DISTRO_SPECS

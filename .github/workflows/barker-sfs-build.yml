@@ -1,0 +1,48 @@
+name: Puppy Linux Kernel Build
+
+on:
+  #schedule:
+    #- cron: '0 2 */20 * *' # daily at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container:
+      image: debian:sid
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            busybox \
+            squashfs-tools wget xz-utils ca-certificates gcc g++ binutils \
+            wget kmod python3 curl
+
+      - name: Building main sfs file 
+        run: |
+        
+              source DISTRO_SPECS
+              
+              # Export every variable in the file to GitHub Actions env
+              while IFS='=' read -r key value; do
+               if [[ ! -z "$key" ]]; then
+                 echo "$key=$value" >> $GITHUB_ENV
+               fi
+              done < config.env
+              
+              chmod +x 01-build-debian-puppy.sh
+              01-build-debian-puppy.sh
+              chmod +x 03-pack-sfs.sh
+              03-pack-sfs.sh
+              
+      - name: Upload kernel (usrmerge)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DISTRO_NAME }} ${{ env.DISTRO_VERSION }} main SFS file
+          path: puppy-livecd-build/puppy_${{ env.DISTRO_NAME }}_${{ env.KMOD_VERSION }}.sfs         

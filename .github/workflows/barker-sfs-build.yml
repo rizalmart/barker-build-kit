@@ -41,7 +41,7 @@ jobs:
               chmod +x 03-pack-sfs.sh
               03-pack-sfs.sh
               
-      - name: Upload kernel (usrmerge)
+      - name: Upload main puppy sfs file
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DISTRO_NAME }} ${{ env.DISTRO_VERSION }} main SFS file

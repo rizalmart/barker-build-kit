@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #Search for duplicate file and replace by symlink
 #Written by mistfire based for Barry Kauler's mesa package fix
 

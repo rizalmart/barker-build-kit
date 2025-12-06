@@ -32,7 +32,7 @@ jobs:
               
               # Export every variable in the file to GitHub Actions env
               while IFS='=' read -r key value; do
-               if [[ ! -z "$key" ]]; then
+               if [ ! -z "$key" ]; then
                  echo "$key=$value" >> $GITHUB_ENV
                fi
               done < ./DISTRO_SPECS

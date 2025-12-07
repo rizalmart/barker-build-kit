@@ -22,7 +22,9 @@ jobs:
           apt-get install -y \
             busybox \
             squashfs-tools wget xz-utils ca-certificates \
-            wget kmod curl cpio coreutils
+            wget kmod curl cpio coreutils python3 libgtk-3 \
+            libgtk2.0 libvte libgtk-layer-shell libayatana-appindicator3 \
+            libatk1.0 libpango1.0 libcairo2 libgdk-pixbuf-2.0
 
       - name: Building debian puppy filesystem
         shell: bash

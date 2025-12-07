@@ -38,6 +38,13 @@ jobs:
               
               chmod +x ./01-build-debian-puppy.sh
               ./01-build-debian-puppy.sh
+
+      - name: Building compiling puppy core applications
+        shell: bash
+        run: |
+             cp -rf ./puppy-source-builds /
+             chmod +x ./external-tools/compile-puppy-core-apps.sh
+             ./external-tools/compile-puppy-core-apps.sh
               
       - name: Packing puppy filesystem into main sfs file
         shell: bash

@@ -22,9 +22,9 @@ jobs:
           apt-get install -y \
             busybox \
             squashfs-tools wget xz-utils ca-certificates \
-            wget kmod curl
+            wget kmod curl cpio
 
-      - name: Building main sfs file and initrd
+      - name: Building debian puppy filesystem
         shell: bash
         run: |
         
@@ -38,14 +38,25 @@ jobs:
               
               chmod +x ./01-build-debian-puppy.sh
               ./01-build-debian-puppy.sh
-              clear
+              
+      - name: Packing puppy filesystem into main sfs file
+        shell: bash
+        run: |      
               chmod +x ./03-pack-sfs.sh
               ./03-pack-sfs.sh
+      
+      - name: Process initrd
+        shell: bash
+        run: |              
               chmod +x ./04-process-initrd.sh
               ./04-process-initrd.sh
+      
+      - name: Putting output build to tarball
+        shell: bash
+        run: |                            
               tar -cJf $DISTRO_NAME-$DISTRO_VERSION.tar.xz -C puppy-livecd-build .              
 
-      - name: Upload main puppy sfs file
+      - name: Upload output build
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DISTRO_NAME }} ${{ env.DISTRO_VERSION }} main SFS files + initrd

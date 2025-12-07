@@ -48,6 +48,10 @@ jobs:
               
               chmod +x ./01-build-debian-puppy.sh
               ./01-build-debian-puppy.sh
+
+              . ./build-settings.cfg
+              cp -rf ./puppy-core-apps-build/* $ROOTFS/usr/local/
+              chroot $ROOTFS /usr/lib/puppy/sbin/update-cache.sh y
               
       - name: Packing puppy filesystem into main sfs file
         shell: bash

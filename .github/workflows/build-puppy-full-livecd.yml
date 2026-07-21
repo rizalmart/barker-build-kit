@@ -197,8 +197,8 @@ jobs:
 
               find ./downloaded-kernel -type f -name "*.zip" | xargs -i unzip {} -d ./downloaded-kernel/
 
-              cp -f ./downloaded-kernel/huge-kernel-*-aufs.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
-              cp -f ./downloaded-kernel/linux-firmware-pconly.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
+              cp -f ./downloaded-kernel/huge-kernel-*-aufs-usrmerge.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
+              cp -f ./downloaded-kernel/linux-firmware-pconly-usrmerge.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
               cp -f ./downloaded-kernel/vmlinuz ./puppy-livecd-build/vmlinuz
         
               chmod +x ./05-build-livecd.sh
@@ -227,7 +227,7 @@ jobs:
           path: puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}
           compression-level: 0
 
-      - name: Upload output build
+      - name: Upload build ISO file
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DISTRO_NAME }}_${{ env.DISTRO_VERSION }}.iso

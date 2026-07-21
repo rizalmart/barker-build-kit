@@ -12,48 +12,15 @@ jobs:
     container:
       image: debian:sid
       options: --privileged
+
+    env:
+      OWNER: rizalmart
+      REPO: puppy-linux-kernel-maker
+      DESTINATION: downloaded-kernel
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # --- Step 1: Trigger Kernel Workflow & Download Artifacts ---
-      - name: Trigger Kernel Workflow & Wait
-        uses: aurelien-bree/action-workflow-dispatch@v1.2.0
-        with:
-          workflow: linux-kernel-aufs.yml
-          repo: rizalmart/puppy-linux-kernel-maker
-          token: ${{ secrets.GITHUB_TOKEN }}
-          wait-for-completion: true
-
-      - name: Download Kernel Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          repository: rizalmart/puppy-linux-kernel-maker
-          path: puppy-downloaded/
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # --- Step 2: Trigger Firmware/Driver Workflow & Download Artifacts ---
-      - name: Trigger Firmware Driver Workflow & Wait
-        uses: aurelien-bree/action-workflow-dispatch@v1.2.0
-        with:
-          workflow: firmware-driver.yml
-          repo: rizalmart/puppy-linux-kernel-maker
-          token: ${{ secrets.GITHUB_TOKEN }}
-          wait-for-completion: true
-
-      - name: Download Firmware Driver Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          repository: rizalmart/puppy-linux-kernel-maker
-          path: puppy-downloaded/
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # --- Flatten Subdirectories ---
-      - name: Flatten Artifact Directory Structure
-        shell: bash
-        run: |
-          # Move files sitting inside artifact subfolders up into puppy-livecd-build
-          find puppy-downloaded/ -mindepth 2 -type f -exec mv -t puppy-downloaded/ {} +
 
       # --- Main Build Process ---
       - name: Install build dependencies
@@ -62,7 +29,98 @@ jobs:
           apt-get install -y \
             busybox \
             squashfs-tools wget xz-utils ca-certificates desktop-file-utils openssl \
-            wget kmod curl cpio coreutils python3 python3-pip unzip binutils patch genisoimage
+            wget kmod curl cpio coreutils python3 python3-pip unzip binutils patch genisoimage unzip jq
+
+      - name: Download latest artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          API="https://api.github.com/repos/$OWNER/$REPO"
+
+          echo "Finding latest successful workflow run for linux-kernel-aufs.yml..."
+
+          RUN_ID=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/workflows/linux-kernel-aufs.yml/runs?status=success&per_page=1" \
+            | jq -r '.workflow_runs[0].id')
+
+          if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
+              echo "No successful workflow run found."
+              exit 1
+          fi
+
+          echo "Run ID: $RUN_ID"
+
+          echo "Getting latest artifact..."
+
+          ARTIFACT_URL=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/runs/$RUN_ID/artifacts" \
+            | jq -r '.artifacts[0].archive_download_url')
+
+          if [ "$ARTIFACT_URL" = "null" ] || [ -z "$ARTIFACT_URL" ]; then
+              echo "No artifact found."
+              exit 1
+          fi
+
+          mkdir -p "$DESTINATION"
+
+          echo "Downloading artifact..."
+
+          curl -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ARTIFACT_URL" \
+            -o artifact.zip
+
+          unzip -q artifact.zip -d "$DESTINATION"
+
+          echo "Finding latest successful workflow run for firmware-driver.yml..."
+
+          RUN_ID=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/workflows/firmware-driver.yml/runs?status=success&per_page=1" \
+            | jq -r '.workflow_runs[0].id')
+
+          if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
+              echo "No successful workflow run found."
+              exit 1
+          fi
+          
+          echo "Run ID: $RUN_ID"
+
+          echo "Getting latest artifact..."
+
+          ARTIFACT_URL=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/runs/$RUN_ID/artifacts" \
+            | jq -r '.artifacts[0].archive_download_url')
+
+          if [ "$ARTIFACT_URL" = "null" ] || [ -z "$ARTIFACT_URL" ]; then
+              echo "No artifact found."
+              exit 1
+          fi
+
+          mkdir -p "$DESTINATION"
+
+          echo "Downloading artifact..."
+
+          curl -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ARTIFACT_URL" \
+            -o artifact.zip
+
+          unzip -q artifact.zip -d "$DESTINATION"
+
+          echo "Artifact extracted to:"
+          ls -R "$DESTINATION"
 
       - name: Building compiling puppy core applications
         shell: bash
@@ -117,10 +175,10 @@ jobs:
 
               . ./DISTRO_SPECS
 
-              find ./puppy-downloaded -type f -name "*.zip" | xargs -i unzip {} -d ./puppy-livecd-build/
+              find ./downloaded-kernel -type f -name "*.zip" | xargs -i unzip {} -d ./downloaded-kernel/
 
-              cp -f ./puppy-downloaded/huge-kernel-*-aufs.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
-              cp -f ./puppy-downloaded/linux-firmware-pconly.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
+              cp -f ./downloaded-kernel/huge-kernel-*-aufs.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
+              cp -f ./downloaded-kernel/linux-firmware-pconly.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
         
               chmod +x ./05-build-livecd.sh
               ./05-build-livecd.sh

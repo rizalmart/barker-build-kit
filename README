@@ -14,7 +14,7 @@ puppy-source-builds - build scripts used for compiling puppy core applications.
    d. DISTRO_SPECS - the information about the puppy to be build
    e. mimeapps.list - list of file associations by default
 3. Optional step: after step 1 script finished and before running step 2. Use chroot to apply some system settings or put some config files on build-rootfs folder.
-4. Before reaching the final process and build the live cd. The following process must performed
+4. Before reaching the final process and build the live cd. The following process must performed (NOTE: For manual build only. When building puppy via github action workflow it automatically fetches kernel, zdrv modules, and fdrv modules from the puppy-linux-kernel-maker github repo) 
    a. obtain the kernel, zdrv modules, and fdrv modules
    b. place it on puppy-livecd-build folder and rename it to its corresponding names as described in DISTRO SPECS
 5. Run 05-build-livecd.sh to finally build the livecd.

@@ -226,3 +226,10 @@ jobs:
           name: ${{ env.DISTRO_PUPPYSFS }}
           path: puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}
           compression-level: 0
+
+      - name: Upload output build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DISTRO_NAME }}_${{ env.DISTRO_VERSION }}.iso
+          path: ${{ env.DISTRO_NAME }}_${{ env.DISTRO_VERSION }}.iso
+          compression-level: 0 

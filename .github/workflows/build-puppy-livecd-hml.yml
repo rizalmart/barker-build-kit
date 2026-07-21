@@ -215,7 +215,7 @@ jobs:
               chmod +x ./05-build-livecd.sh
               ./05-build-livecd.sh
                          
-      - name: Upload main sfs + initrd
+      - name: Upload main SFS + initrd
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.DISTRO_NAME }}-${{ env.DISTRO_VERSION }}-main-files

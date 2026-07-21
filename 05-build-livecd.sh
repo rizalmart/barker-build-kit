@@ -64,7 +64,7 @@ ROOT PASSWORD: $ROOT_PASSWORD
 
 if [ "$EFI_IMG_FOUND" != "" ]; then
     echo "Building Hybrid UEFI LIVE CD..."
-	xorriso -as mkisofs -J -D -R ${VOLI} -o ${WKGBASE}/${ISONAME} ${BOOTPARM} ${BOOTCAT} -full-iso9660-filenames -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -eltorito-platform efi -eltorito-boot ${EFI_BOOT_IMG} ${WKGBASE}/puppy-livecd-build/
+	genisoimage -J -D -R ${VOLI} -o ${WKGBASE}/${ISONAME} ${BOOTPARM} ${BOOTCAT} -full-iso9660-filenames -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e ${EFI_BOOT_IMG} -no-emul-boot ${WKGBASE}/puppy-livecd-build/
 else
 	genisoimage -J -D -R ${VOLI} -o ${WKGBASE}/${ISONAME} ${BOOTPARM} ${BOOTCAT} -full-iso9660-filenames -no-emul-boot -boot-load-size 4 -boot-info-table ${WKGBASE}/puppy-livecd-build/  
 fi

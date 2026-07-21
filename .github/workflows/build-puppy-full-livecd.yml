@@ -1,4 +1,4 @@
-name: Build Puppy Full Live CD
+name: Build Puppy Live CD
 
 on:
   #schedule:

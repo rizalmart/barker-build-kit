@@ -1,4 +1,4 @@
-name: Build Puppy Full Live CD
+name: Build Puppy Full Live CD (Test)
 
 on:
   #schedule:
@@ -179,6 +179,7 @@ jobs:
 
               cp -f ./downloaded-kernel/huge-kernel-*-aufs.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
               cp -f ./downloaded-kernel/linux-firmware-pconly.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
+              cp -f ./downloaded-kernel/vmlinuz ./puppy-livecd-build/vmlinuz
         
               chmod +x ./05-build-livecd.sh
               ./05-build-livecd.sh

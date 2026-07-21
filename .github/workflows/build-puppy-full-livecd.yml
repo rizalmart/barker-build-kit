@@ -1,4 +1,4 @@
-name: Build Puppy Full Live CD (HML Edition)
+name: Build Puppy Full Live CD
 
 on:
   #schedule:
@@ -169,16 +169,6 @@ jobs:
 
               . ./build-settings.cfg
               cp -rf ./puppy-core-apps-build/* $ROOTFS/usr/local/
-
-              #Install hannah montana linux v26 theme
-              git clone https://gitlab.com/DecaCagle/hannahmontanalinux26.git hannah-montana-linux
-
-              rm -rf  ./hannah-montana-linux/config/includes.chroot/usr/share/desktop-base/active-theme
-
-              for fld in color-schemes desktop-base icons plasma sddm wallpapers
-              do
-                cp -arf ./hannah-montana-linux/config/includes.chroot/usr/share/$fld $ROOTFS/usr/share/
-              done
               
               chroot $ROOTFS /usr/lib/puppy/sbin/update-cache.sh y
 

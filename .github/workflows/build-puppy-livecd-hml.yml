@@ -1,0 +1,246 @@
+name: Build Puppy Live CD (HML Edition)
+
+on:
+  #schedule:
+    #- cron: '0 2 */20 * *' # daily at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container:
+      image: debian:sid
+      options: --privileged
+
+    env:
+      OWNER: rizalmart
+      REPO: puppy-linux-kernel-maker
+      DESTINATION: downloaded-kernel
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Main Build Process ---
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            busybox \
+            squashfs-tools wget xz-utils ca-certificates desktop-file-utils openssl \
+            wget kmod curl cpio coreutils python3 python3-pip unzip binutils patch genisoimage unzip jq xorriso
+
+      - name: Download latest puppy linux kernel and firmware driver build artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          API="https://api.github.com/repos/$OWNER/$REPO"
+
+          echo "Finding latest successful workflow run for linux-kernel-aufs.yml..."
+
+          RUN_ID=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/workflows/linux-kernel-aufs.yml/runs?status=success&per_page=1" \
+            | jq -r '.workflow_runs[0].id')
+
+          if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
+              echo "No successful workflow run found."
+              exit 1
+          fi
+
+          echo "Run ID: $RUN_ID"
+
+          echo "Searching for artifact matching huge-kernel-*-aufs-usrmerge..."
+          
+          ARTIFACT_JSON=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/runs/$RUN_ID/artifacts")
+          
+          ARTIFACT_URL=$(echo "$ARTIFACT_JSON" | jq -r '
+            .artifacts[]
+            | select(.name | test("^huge-kernel-.*-aufs-usrmerge$"))
+            | .archive_download_url
+            ' | head -n1)
+          
+          ARTIFACT_NAME=$(echo "$ARTIFACT_JSON" | jq -r '
+            .artifacts[]
+            | select(.name | test("^huge-kernel-.*-aufs-usrmerge$"))
+            | .name
+            ' | head -n1)
+          
+          if [ -z "$ARTIFACT_URL" ] || [ "$ARTIFACT_URL" = "null" ]; then
+              echo "No artifact matching huge-kernel-*-aufs found."
+              exit 1
+          fi
+          
+          echo "Downloading artifact: $ARTIFACT_NAME"
+
+          curl -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ARTIFACT_URL" \
+            -o artifact.zip
+
+          unzip -q artifact.zip -d "$DESTINATION"
+
+          echo "Finding latest successful workflow run for firmware-driver.yml..."
+
+          RUN_ID=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/workflows/firmware-driver.yml/runs?status=success&per_page=1" \
+            | jq -r '.workflow_runs[0].id')
+            
+          if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
+              echo "No successful workflow run found."
+              exit 1
+          fi
+          
+          echo "Run ID: $RUN_ID"
+
+          echo "Getting latest artifact..."
+
+          ARTIFACT_JSON=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$API/actions/runs/$RUN_ID/artifacts")
+          
+          ARTIFACT_URL=$(echo "$ARTIFACT_JSON" | jq -r '
+            .artifacts[]
+            | select(.name | test("^linux-firmware-pconly-usrmerge$"))
+            | .archive_download_url
+            ' | head -n1)
+          
+          ARTIFACT_NAME=$(echo "$ARTIFACT_JSON" | jq -r '
+            .artifacts[]
+            | select(.name | test("^linux-firmware-pconly-usrmerge$"))
+            | .name
+            ' | head -n1)
+
+          if [ "$ARTIFACT_URL" = "null" ] || [ -z "$ARTIFACT_URL" ]; then
+              echo "No artifact found."
+              exit 1
+          fi
+
+          mkdir -p "$DESTINATION"
+
+          echo "Downloading artifact..."
+
+          curl -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ARTIFACT_URL" \
+            -o artifact.zip
+
+          unzip -q artifact.zip -d "$DESTINATION"
+
+          echo "Artifact extracted to:"
+          ls -R "$DESTINATION"
+
+      - name: Building compiling puppy core applications
+        shell: bash
+        run: |
+              . ./build-settings.cfg
+              cp -rf ./puppy-source-builds /
+              chmod +x ./external-tools/compile-puppy-core-apps.sh
+              ./external-tools/compile-puppy-core-apps.sh
+              mkdir -p puppy-core-apps-build
+              cp -rf /usr/local/* ./puppy-core-apps-build/
+
+      - name: Building debian puppy filesystem
+        shell: bash
+        run: |
+         
+              . ./DISTRO_SPECS
+
+              echo "DISTRO_NAME=$DISTRO_NAME" >>  $GITHUB_ENV
+              echo "DISTRO_VERSION=$DISTRO_VERSION" >>  $GITHUB_ENV
+              echo "DISTRO_PUPPYSFS=$DISTRO_PUPPYSFS" >>  $GITHUB_ENV
+
+              export TERM=xterm
+              
+              chmod +x ./01-build-debian-puppy.sh
+              ./01-build-debian-puppy.sh
+
+              . ./build-settings.cfg
+              cp -rf ./puppy-core-apps-build/* $ROOTFS/usr/local/
+
+              #Install hannah montana linux v26 theme
+              git clone https://gitlab.com/DecaCagle/hannahmontanalinux26.git hannah-montana-linux
+
+              rm -rf  ./hannah-montana-linux/config/includes.chroot/usr/share/desktop-base/active-theme
+
+              for fld in color-schemes desktop-base icons plasma sddm wallpapers
+              do
+                cp -arf ./hannah-montana-linux/config/includes.chroot/usr/share/$fld $ROOTFS/usr/share/
+              done
+              
+              chroot $ROOTFS /usr/lib/puppy/sbin/update-cache.sh y
+
+      - name: Prepare Live CD
+        shell: bash
+        run: |              
+              chmod +x ./02-prepare-livecd.sh
+              ./02-prepare-livecd.sh
+              
+      - name: Packing puppy filesystem into main sfs file
+        shell: bash
+        run: |      
+              chmod +x ./03-pack-sfs.sh
+              ./03-pack-sfs.sh
+
+      - name: Process initrd
+        shell: bash
+        run: |              
+              chmod +x ./04-process-initrd.sh
+              ./04-process-initrd.sh
+
+      - name: Build Live CD
+        shell: bash
+        run: |
+
+              . ./DISTRO_SPECS
+
+              find ./downloaded-kernel -type f -name "*.zip" | xargs -i unzip {} -d ./downloaded-kernel/
+
+              cp -f ./downloaded-kernel/huge-kernel-*-aufs-usrmerge.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
+              cp -f ./downloaded-kernel/linux-firmware-pconly-usrmerge.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
+              cp -f ./downloaded-kernel/vmlinuz ./puppy-livecd-build/vmlinuz
+        
+              chmod +x ./05-build-livecd.sh
+              ./05-build-livecd.sh
+                         
+      - name: Upload output build
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.DISTRO_NAME }}-${{ env.DISTRO_VERSION }}-main-files
+          path: |
+                puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}
+                puppy-livecd-build/initrd.xz
+          compression-level: 0 
+
+      - name: Upload output build
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.DISTRO_NAME }}-${{ env.DISTRO_VERSION }}-initrd
+          path: puppy-livecd-build/initrd.xz
+          archive: false
+          
+      - name: Upload output build
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.DISTRO_PUPPYSFS }}
+          path: puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}
+          archive: false
+
+      - name: Upload build ISO file
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.DISTRO_NAME }}_${{ env.DISTRO_VERSION }}.iso
+          path: ${{ env.DISTRO_NAME }}_${{ env.DISTRO_VERSION }}.iso
+          archive: false

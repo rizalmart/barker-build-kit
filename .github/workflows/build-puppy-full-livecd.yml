@@ -1,4 +1,4 @@
-name: Build Puppy Main SFS + initrd
+name: Build Puppy Full Live CD
 
 on:
   #schedule:
@@ -29,7 +29,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           repository: rizalmart/puppy-linux-kernel-maker
-          path: puppy-livecd-build/
+          path: puppy-downloaded/
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Step 2: Trigger Firmware/Driver Workflow & Download Artifacts ---
@@ -45,7 +45,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           repository: rizalmart/puppy-linux-kernel-maker
-          path: puppy-livecd-build/
+          path: puppy-downloaded/
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Flatten Subdirectories ---
@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           # Move files sitting inside artifact subfolders up into puppy-livecd-build
-          find puppy-livecd-build/ -mindepth 2 -type f -exec mv -t puppy-livecd-build/ {} +
+          find puppy-downloaded/ -mindepth 2 -type f -exec mv -t puppy-downloaded/ {} +
 
       # --- Main Build Process ---
       - name: Install build dependencies
@@ -62,7 +62,7 @@ jobs:
           apt-get install -y \
             busybox \
             squashfs-tools wget xz-utils ca-certificates desktop-file-utils openssl \
-            wget kmod curl cpio coreutils python3 python3-pip unzip binutils patch
+            wget kmod curl cpio coreutils python3 python3-pip unzip binutils patch genisoimage
 
       - name: Building compiling puppy core applications
         shell: bash
@@ -92,19 +92,39 @@ jobs:
               . ./build-settings.cfg
               cp -rf ./puppy-core-apps-build/* $ROOTFS/usr/local/
               chroot $ROOTFS /usr/lib/puppy/sbin/update-cache.sh y
+
+      - name: Prepare Live CD
+        shell: bash
+        run: |              
+              chmod +x ./02-prepare-livecd.sh
+              ./02-prepare-livecd.sh
               
       - name: Packing puppy filesystem into main sfs file
         shell: bash
         run: |      
               chmod +x ./03-pack-sfs.sh
               ./03-pack-sfs.sh
-      
+
       - name: Process initrd
         shell: bash
         run: |              
               chmod +x ./04-process-initrd.sh
               ./04-process-initrd.sh
-                  
+
+      - name: Build Live CD
+        shell: bash
+        run: |
+
+              . ./DISTRO_SPECS
+
+              find ./puppy-downloaded -type f -name "*.zip" | xargs -i unzip {} -d ./puppy-livecd-build/
+
+              cp -f ./puppy-downloaded/huge-kernel-*-aufs.sfs ./puppy-livecd-build/$DISTRO_ZDRVSFS
+              cp -f ./puppy-downloaded/linux-firmware-pconly.sfs ./puppy-livecd-build/$DISTRO_FDRVSFS
+        
+              chmod +x ./05-build-livecd.sh
+              ./05-build-livecd.sh
+                         
       - name: Upload output build
         uses: actions/upload-artifact@v4
         with:

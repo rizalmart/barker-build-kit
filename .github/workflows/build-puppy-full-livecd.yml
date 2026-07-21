@@ -95,7 +95,7 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             "$API/actions/workflows/firmware-driver.yml/runs?status=success&per_page=1" \
             | jq -r '.workflow_runs[0].id')
-
+            
           if [ "$RUN_ID" = "null" ] || [ -z "$RUN_ID" ]; then
               echo "No successful workflow run found."
               exit 1

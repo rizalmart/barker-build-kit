@@ -112,13 +112,13 @@ jobs:
           
           ARTIFACT_URL=$(echo "$ARTIFACT_JSON" | jq -r '
             .artifacts[]
-            | select(.name | test("^linux-firmware-pconly-usrmerge$"))
+            | select(.name | test("^linux-firmware-pconly-usrmerge\.sfs$"))
             | .archive_download_url
             ' | head -n1)
           
           ARTIFACT_NAME=$(echo "$ARTIFACT_JSON" | jq -r '
             .artifacts[]
-            | select(.name | test("^linux-firmware-pconly-usrmerge$"))
+            | select(.name | test("^linux-firmware-pconly-usrmerge\.sfs$"))
             | .name
             ' | head -n1)
 

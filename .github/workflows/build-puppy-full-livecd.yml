@@ -135,9 +135,9 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "$ARTIFACT_URL" \
-            -o artifact.zip
+            -o linux-firmware-pconly-usrmerge.sfs
 
-          unzip -q artifact.zip -d "$DESTINATION"
+          #unzip -q artifact.zip -d "$DESTINATION"
 
           echo "Artifact extracted to:"
           ls -R "$DESTINATION"

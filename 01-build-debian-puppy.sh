@@ -552,7 +552,7 @@ cat > ${WKGBASE}/${ROOTFS}/etc/os-release <<EOF
 NAME="${OS_RELEASE_NAME}"
 ID=debian
 PRETTY_NAME="${OS_RELEASE_PRETTY_NAME}"
-VERSION="${DISTRO_VERSION} Debian-based"
+VERSION="${DISTRO_VERSION}"
 VERSION_ID=${DISTRO_VERSION}
 VERSION_CODENAME=${DEBIAN_VERSION_NAME}
 ID_LIKE=debian
@@ -561,7 +561,7 @@ SUPPORT_URL="https://forum.puppylinux.com"
 BUG_REPORT_URL="https://forum.puppylinux.com"
 CPE_NAME="cpe:/o:puppy:puppy:${DISTRO_VERSION}"
 LOGO=puppy
-VARIANT=${DISTRO_NAME}
+VARIANT="${DISTRO_NAME} (Debian-based)"
 RELEASE_TYPE="rolling"
 EOF
 

@@ -6,6 +6,11 @@ puppy-rootfs-template - the puppy skeletal filesystem
 livecd-files - boot files used to build the live cd 
 puppy-source-builds - build scripts used for compiling puppy core applications. 
 
+There are two ways to build a puppy using this build kit
+1. Online build. It allows to build a puppy live cd. Fork this repo, make adjustments, goto Actions, and run the workflow 
+2. Manual build.
+
+Manual Build
 1. To use this build kit. you must to run the script step-by-step.
 2. Before running the script you must configure it first by tinkering the following files:
    a. build-settings.cfg - build configuration

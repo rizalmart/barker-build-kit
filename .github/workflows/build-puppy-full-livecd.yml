@@ -205,15 +205,6 @@ jobs:
               chmod +x ./05-build-livecd.sh
               ./05-build-livecd.sh
                          
-      - name: Upload main SFS + initrd
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.DISTRO_NAME }}-${{ env.DISTRO_VERSION }}-main-files
-          path: |
-                puppy-livecd-build/${{ env.DISTRO_PUPPYSFS }}
-                puppy-livecd-build/initrd.xz
-          compression-level: 0 
-
       - name: Upload initrd
         uses: actions/upload-artifact@v7
         with:

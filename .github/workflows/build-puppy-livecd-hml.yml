@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: debian:sid
+      image: debian:trixie
       options: --privileged
 
     env:

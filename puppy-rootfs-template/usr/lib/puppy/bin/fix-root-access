@@ -19,7 +19,7 @@ START_UID="$uid_min"
 fi
 	
 	
-for file1 in  $(find /etc/pam.d -type f -maxdepth 1 -name "*")
+for file1 in  $(find /etc/pam.d -maxdepth 1 -type f -name "*")
 do
 
   [ "$(grep -m1 '!=' $file1)" != "" ] && sed -i -e '/user.*!=.*root/d' $file1
@@ -31,9 +31,11 @@ do
 done
 
 
-for file1 in $(find /usr/lib/systemd/user -type f -maxdepth 1 \( -name "*.service" -o -name "*.socket" \))
+for file1 in $(find /usr/lib/systemd/user -maxdepth 1 -type f \( -name "*.service" -o -name "*.socket" \))
 do
 
   [ "$(grep -m1 'ConditionUser=!' $file1)" != "" ] && sed -i -e '/ConditionUser=!root/d' $file1
 
 done
+
+exit 0

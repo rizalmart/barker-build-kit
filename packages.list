@@ -379,7 +379,6 @@ foomatic-db
 foomatic-db-engine
 openprinting-ppds
 hplip
-plasma-keyboard
 dkms
 bison
 build-essential

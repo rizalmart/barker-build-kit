@@ -1,4 +1,4 @@
-This tools allows to build debian-based puppy from scratch.
+This tools allows to build debian-based puppy from scratch using upstream debian packages
 
 folders:
 external-tools - tools will be used for processing the main puppy sfs

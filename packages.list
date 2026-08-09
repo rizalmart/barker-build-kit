@@ -391,3 +391,6 @@ libjemalloc2
 ipp-usb
 plasma-theme-oxygen
 oxygen-icon-theme
+shim-signed
+grub-efi-amd64-bin
+grub-common

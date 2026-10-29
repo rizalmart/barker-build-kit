@@ -1,14 +1,19 @@
 [Unit]
-Description=Puppy shutdown process
-After=umount.target shutdown.target
-Before=final.target
+Description=Puppy Linux Shutdown Process
 DefaultDependencies=no
+After=umount.target systemd-journald.service shutdown.target
+Before=final.target
+ConditionPathExists=/usr/local/puppy/etc/core-scripts/rc.shutdown
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/puppy/etc/core-scripts/rc.shutdown systemd
 StandardInput=tty-force
 StandardOutput=tty-force
+StandardError=inherit
+TTYReset=yes
+TTYVHangup=yes
+TimeoutStartSec=infinity
 
 [Install]
 WantedBy=poweroff.target reboot.target halt.target

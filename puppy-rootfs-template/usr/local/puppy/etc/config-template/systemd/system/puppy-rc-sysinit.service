@@ -1,7 +1,7 @@
 [Unit]
 Description=Puppy filesystem init
 After=veritysetup.target kmod-static-nodes.service systemd-modules-load.service
-Before=systemd-remount-fs.service systemd-journald.service sysinit.target
+Before=systemd-remount-fs.service systemd-journald.service sysinit.target systemd-udevd.service
 DefaultDependencies=no
 
 [Service]

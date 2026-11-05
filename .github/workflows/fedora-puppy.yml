@@ -20,7 +20,7 @@ jobs:
       - name: Set up Fedora Rawhide Bootstrap Rootfs
         run: |
 
-          BUILD_ROOTFS="$(pwd)/build-rootfs"
+          BUILD_ROOTFS="./build-rootfs"
         
           # Create the local directory for the root filesystem
           mkdir -p $BUILD_ROOTFS
@@ -34,7 +34,8 @@ jobs:
               fedora-release dnf coreutils bash passwd shadow-utils curl wget
             
             # Clean up DNF cache and logs inside the target rootfs to save space
-            dnf --installroot=$BUILD_ROOTFS clean all
+            chroot $BUILD_ROOTFS dnf clean all
+            
             rm -rf $BUILD_ROOTFS/var/cache/dnf/* $BUILD_ROOTFS/var/log/* $BUILD_ROOTFS/tmp/*
           "
 
@@ -46,7 +47,7 @@ jobs:
           
       - name: Install KDE Plasma and Core Features
         run: |
-          chroot ./build-rootfs dnf install -y @kde-desktop 
+          chroot build-rootfs dnf install -y @kde-desktop 
 
       - name: Install VPN Plugins and Drivers
         run: |

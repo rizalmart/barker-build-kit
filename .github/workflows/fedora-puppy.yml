@@ -17,24 +17,24 @@ jobs:
           gcc gcc-c++ make automake autoconf gtk2-devel gtk3-devel \
           libxml2-devel glib2-devel git passwd busybox docker
 
-      - name: Initialize RootFS Directory
+      - name: Set up Fedora Rawhide Bootstrap Rootfs
         run: |
-          # Create the requested local directory for the root filesystem
-          mkdir -p ./build-rootfs
+          # Create the local directory for the root filesystem
+          mkdir -p build-rootfs
 
           # Run the official Fedora Rawhide container to bootstrap using dnf
           docker run --rm -v $(pwd)/build-rootfs:/build-rootfs fedora:rawhide bash -c "
             set -ex
             
-            # Install core packages into the target installroot directory for Rawhide
-            dnf install -y --releasever=rawhide --installroot=/build-rootfs --setopt=install_weak_deps=False \
+            # Use --use-host-config so dnf can access repositories from the container's base image
+            dnf install -y --use-host-config --releasever=rawhide --installroot=/build-rootfs --setopt=install_weak_deps=False \
               fedora-release dnf coreutils bash passwd shadow-utils curl wget
             
             # Clean up DNF cache and logs inside the target rootfs to save space
             dnf --installroot=/build-rootfs clean all
             rm -rf /build-rootfs/var/cache/dnf/* /build-rootfs/var/log/* /build-rootfs/tmp/*
           "
-
+          
       - name: Install KDE Plasma and Core Features
         run: |
           dnf install @kde-desktop --installroot=$(pwd)/build-rootfs -y 

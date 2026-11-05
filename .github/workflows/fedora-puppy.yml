@@ -20,7 +20,7 @@ jobs:
       - name: Set up Fedora Rawhide Bootstrap Rootfs
         run: |
           # Create the local directory for the root filesystem
-          mkdir -p build-rootfs
+          mkdir -p ./build-rootfs
 
           # Run the official Fedora Rawhide container to bootstrap using dnf
           docker run --rm -v $(pwd)/build-rootfs:/build-rootfs fedora:rawhide bash -c "
@@ -34,14 +34,16 @@ jobs:
             dnf --installroot=/build-rootfs clean all
             rm -rf /build-rootfs/var/cache/dnf/* /build-rootfs/var/log/* /build-rootfs/tmp/*
           "
+
+          echo "nameserver 8.8.8.8" > ./build-rootfs/etc/resolv.conf
           
       - name: Install KDE Plasma and Core Features
         run: |
-          dnf install @kde-desktop --installroot=$(pwd)/build-rootfs -y 
+          chroot ./build-rootfs dnf install -y @kde-desktop 
 
       - name: Install VPN Plugins and Drivers
         run: |
-          dnf --installroot=$(pwd)/build-rootfs install -y --skip-unavailable \
+          chroot ./build-rootfs dnf install -y --skip-unavailable \
           NetworkManager-sstp NetworkManager-pptp NetworkManager-l2tp \
           NetworkManager-libreswan NetworkManager-openvpn NetworkManager-wireguard \
           mesa-dri-drivers mesa-vulkan-drivers mesa-va-drivers mesa-vdpau-drivers
@@ -49,10 +51,10 @@ jobs:
       - name: Install Application Suite
         run: |
           # Adding RPM Fusion for Amarok and multimedia support if needed
-          dnf --installroot=$(pwd)/build-rootfs install -y \
+          chroot ./build-rootfs dnf install -y \
           https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
           
-          dnf --installroot=$(pwd)/build-rootfs install -y --skip-unavailable \
+          chroot ./build-rootfs  dnf install -y --skip-unavailable \
           kwave krecord skanlite kamera k3b ark kate yad flatpak \
           konqueror falkon haruna gwenview gparted filelight discover cups gutenprint foomatic
 
@@ -63,7 +65,7 @@ jobs:
 
       - name: Final Cleanup
         run: |
-          dnf --installroot=$(pwd)/build-rootfs clean all
+          chroot ./build-rootfs dnf clean all
           rm -rf ./build-rootfs/var/cache/dnf
 
       - name: Pack to SquashFS

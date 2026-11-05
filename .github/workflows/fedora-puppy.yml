@@ -15,7 +15,7 @@ jobs:
         run: |
           dnf install -y wget tar xz squashfs-tools dnf-plugins-core \
           gcc gcc-c++ make automake autoconf gtk2-devel gtk3-devel \
-          libxml2-devel glib2-devel git passwd busybox
+          libxml2-devel glib2-devel git passwd busybox docker
 
       - name: Initialize RootFS Directory
         run: |

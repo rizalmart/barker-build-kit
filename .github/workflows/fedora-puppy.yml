@@ -19,10 +19,21 @@ jobs:
 
       - name: Initialize RootFS Directory
         run: |
+          # Create the requested local directory for the root filesystem
           mkdir -p ./build-rootfs
-          # Bootstrap the base system
-          dnf --installroot=$(pwd)/build-rootfs --use-host-config --releasever=43 install -y \
-          @core systemd basesystem fedora-release dnf
+
+          # Run the official Fedora Rawhide container to bootstrap using dnf
+          docker run --rm -v $(pwd)/build-rootfs:/build-rootfs fedora:rawhide bash -c "
+            set -ex
+            
+            # Install core packages into the target installroot directory for Rawhide
+            dnf install -y --releasever=rawhide --installroot=/build-rootfs --setopt=install_weak_deps=False \
+              fedora-release dnf coreutils bash passwd shadow-utils curl wget
+            
+            # Clean up DNF cache and logs inside the target rootfs to save space
+            dnf --installroot=/build-rootfs clean all
+            rm -rf /build-rootfs/var/cache/dnf/* /build-rootfs/var/log/* /build-rootfs/tmp/*
+          "
 
       - name: Install KDE Plasma and Core Features
         run: |

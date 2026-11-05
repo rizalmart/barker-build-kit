@@ -38,6 +38,8 @@ jobs:
             rm -rf $BUILD_ROOTFS/var/cache/dnf/* $BUILD_ROOTFS/var/log/* $BUILD_ROOTFS/tmp/*
           "
 
+          ls $BUILD_ROOTFS/
+          
           echo "nameserver 8.8.8.8" > $BUILD_ROOTFS/etc/resolv.conf
           
       - name: Install KDE Plasma and Core Features

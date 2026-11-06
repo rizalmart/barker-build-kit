@@ -114,10 +114,20 @@ echo
 echo "===> Installing Puppy Components!"
 
 cp -arf ${WKGBASE}/puppy-rootfs-template/* ${WKGBASE}/${ROOTFS}/
-cp -arf ${WKGBASE}/puppy-rootfs-template/usr/lib/puppy/etc/config-template/* ${WKGBASE}/${ROOTFS}/etc/
+cp -arf ${WKGBASE}/puppy-rootfs-template/usr/local/puppy/etc/config-template/* ${WKGBASE}/${ROOTFS}/etc/
 cp -arf ${WKGBASE}/DISTRO_SPECS ${WKGBASE}/${ROOTFS}/etc/DISTRO_SPECS
 
-chroot ${WKGBASE}/${ROOTFS} systemctl enable puppy-rc-sysinit puppy-rc-shutdown
+chroot ${WKGBASE}/${ROOTFS} ln -s /usr/local/puppy/lib/gtkdialog /usr/lib/gtkdialog
+chroot ${WKGBASE}/${ROOTFS} ln -s /usr/local/puppy/etc/core-scripts/functions /etc/rc.d/functions
+chroot ${WKGBASE}/${ROOTFS} ln -s /usr/local/puppy/etc/core-scripts/functions_x /etc/rc.d/functions_x
+
+chroot ${WKGBASE}/${ROOTFS} cp -asn /usr/local/puppy/bin/* /usr/local/bin/
+chroot ${WKGBASE}/${ROOTFS} cp -asn /usr/local/puppy/sbin/* /usr/local/sbin/
+
+[ -d ${WKGBASE}/chroot-includes ] && cp -arf ${WKGBASE}/chroot-includes/* ${WKGBASE}/${ROOTFS}/
+[ -d ${WKGBASE}/includes.chroot ] && cp -arf ${WKGBASE}/includes.chroot/* ${WKGBASE}/${ROOTFS}/
+
+chroot ${WKGBASE}/${ROOTFS} systemctl enable puppy-rc-sysinit puppy-rc-shutdown zramswap dkms-check nvidia-driver-select
 chroot ${WKGBASE}/${ROOTFS} ln -sr /usr/bin/busybox /usr/bin/ash
 
 if [ "$FILEMNT_DEFAULT_FILEMANAGER" != "" ]; then
@@ -138,6 +148,7 @@ chroot ${WKGBASE}/${ROOTFS} ln -sr /usr/bin/bash /usr/bin/sh
 if [ -f ${WKGBASE}/mimeapps.list ]; then
 	cp -f ${WKGBASE}/mimeapps.list ${WKGBASE}/${ROOTFS}/usr/local/share/applications/mimeapps.list
 fi
+
 
 echo "===> Debloating rootfs!"
 
@@ -268,6 +279,37 @@ fi
 cp -f ${WKGBASE}/external-tools/update-system-packages ${WKGBASE}/${ROOTFS}/usr/local/bin/update-system-packages
 
 echo "" > ${WKGBASE}/${ROOTFS}/etc/resolv.conf
+echo "" > ${WKGBASE}/${ROOTFS}/etc/machine-id
+
+[ -e ${WKGBASE}/${ROOTFS}/etc/os-release ] && rm -f ${WKGBASE}/${ROOTFS}/etc/os-release
+
+. ${WKGBASE}/DISTRO_SPECS
+
+cat > ${WKGBASE}/${ROOTFS}/etc/os-release <<EOF
+NAME="${OS_RELEASE_NAME}"
+ID=debian
+PRETTY_NAME="${OS_RELEASE_PRETTY_NAME}"
+VERSION="${DISTRO_VERSION}"
+VERSION_ID=${DISTRO_VERSION}
+VERSION_CODENAME=${DEBIAN_VERSION_NAME}
+ID_LIKE=debian
+HOME_URL="https://puppylinux.com"
+SUPPORT_URL="https://forum.puppylinux.com"
+BUG_REPORT_URL="https://forum.puppylinux.com"
+CPE_NAME="cpe:/o:puppy:puppy:${DISTRO_VERSION}"
+LOGO=puppy
+VARIANT="${DISTRO_NAME} (Debian-based)"
+RELEASE_TYPE="rolling"
+EOF
+
+echo "" > ${WKGBASE}/${ROOTFS}/etc/xdg/kcm-about-distrorc
+
+[ -f ${WKGBASE}/${ROOTFS}/etc/skel/.face ] && cp -f ${WKGBASE}/${ROOTFS}/etc/skel/.face ${WKGBASE}/${ROOTFS}/root/.face
+
+for issuef in issue issue.net
+do
+ echo "${OS_RELEASE_PRETTY_NAME}" > ${WKGBASE}/${ROOTFS}/etc/${issuef}
+done
 
 chroot ${WKGBASE}/${ROOTFS} update-cache.sh y
 

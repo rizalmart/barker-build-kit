@@ -20,7 +20,7 @@ jobs:
       - name: Set up Fedora Rawhide Bootstrap Rootfs
         run: |
 
-          BUILD_ROOTFS="./build-rootfs"
+          BUILD_ROOTFS="/build-rootfs"
         
           # Create the local directory for the root filesystem
           mkdir -p $BUILD_ROOTFS

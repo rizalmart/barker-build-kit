@@ -54,7 +54,6 @@ jobs:
             bash \
             coreutils \
             shadow \
-            passwd \
             curl \
             wget \
             iproute2

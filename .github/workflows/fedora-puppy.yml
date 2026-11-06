@@ -47,9 +47,6 @@ jobs:
 
       - name: Install Application Suite
         run: |
-          # Adding RPM Fusion for Amarok and multimedia support if needed
-          chroot ./build-rootfs dnf install -y \
-          https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
           
           chroot ./build-rootfs  dnf install -y --skip-unavailable \
           kwave krecord skanlite kamera k3b ark kate yad flatpak \
@@ -59,6 +56,7 @@ jobs:
         run: |
             chroot $(pwd)/build-rootfs useradd -m -s /bin/bash -c puppy puppy
             echo "puppy:puppy" | chroot $(pwd)/build-rootfs chpasswd
+            echo "root:woofwoof" | chroot ${WKGBASE}/${ROOTFS} chpasswd
 
       - name: Final Cleanup
         run: |

@@ -1,39 +1,150 @@
 #!/bin/bash
 
-DPKG_DIR="/var/lib/dpkg"
+. /etc/rc.d/PUPSTATE
 
-STATUS_FILE="$DPKG_DIR/status"
-OUT_DIR="$DPKG_DIR/installed"
+LOG_FILE="/var/log/dpkg.log"
+OFFSET_FILE="/var/lib/dpkg/status_sync_offset"
+STATUS_DIR="/var/lib/dpkg/installed"
+MASTER_STATUS="/var/lib/dpkg/status"
 
-mkdir -p "$OUT_DIR"
+LAYERED_ROOTFS="$(mount | grep "on / type" | grep -E "aufs|overlay")"
 
-# Extract package names from dpkg status
-mapfile -t status_pkgs < <(
-    awk -F': ' '/^Package:/ {print $2}' "$STATUS_FILE"
-)
+RO_LAYER=""
+RW_LAYER=""
 
-# Extract package names from existing split files
-mapfile -t installed_pkgs < <(
-    awk -F': ' '/^Package:/ {print $2}' "$OUT_DIR"/* 2>/dev/null
-)
+if [ "$LAYERED_ROOTFS" != "" ]; then
+  RO_LAYER="/initrd${PUP_LAYER}"
+  RW_LAYER="/initrd/pup_rw"
+fi
 
-# Build unique list (symmetric difference)
-unique_pkgs=$(printf "%s\n" "${status_pkgs[@]}" "${installed_pkgs[@]}" | sort | uniq -u)
+[ -d "$STATUS_DIR" ] || mkdir -p "$STATUS_DIR"
 
-# Process each package
-for pkg in $unique_pkgs
-do
+# ---------------------------------------------------------------------------
+# FUNCTION: Check and re-enter a resurfaced package from pup_ro2 (AUFS lower layer)
+# Triggered FIRST when a package removal/purge is invoked.
+# ---------------------------------------------------------------------------
+handle_resurfaced_on_removal() {
+	
+    local pkg="$1"
+    [ -z "$pkg" ] && return
+    
+    local clean_pkg="$(echo $pkg | cut -f 1 -d ':')"
+    local target_file="$STATUS_DIR/$clean_pkg"
+
+    # If the split file now exists (exposed because its upper-layer whiteout was removed)
+    if [ -f "$RO_LAYER/$target_file" ] && [ ! -f "$RW_LAYER/$target_file" ]; then
+    
+        # Extract true package name from the header of the resurfaced file
+        local pkg_name
+        pkg_name=$(awk '$1 == "Package:" {print $2; exit}' "$RO_LAYER/$target_file")
+        
+        [ -z "$pkg_name" ] && return
+
+        # If it's missing from the master status file, re-enter it back 
+        # instantly using only this single file (no full folder/file scanning)
+        if ! dpkg -s "$pkg_name" >/dev/null 2>&1; then
+            {
+                echo ""
+                cat "$RO_LAYER/$target_file"
+            } >> "$MASTER_STATUS"
+        fi
+        
+    fi
+
+}
+
+# ---------------------------------------------------------------------------
+# FUNCTION: Refresh or update a single package via O(1) dpkg query
+# ---------------------------------------------------------------------------
+refresh_package() {
+	
+    local pkg="$1"
+    [ -z "$pkg" ] && return
+    
+    local clean_pkg="$(echo $pkg | cut -f 1 -d ':')"
+    local target_file="$STATUS_DIR/$clean_pkg"
+    
+    local new_stanza
+    new_stanza=$(dpkg -s "$pkg" 2>/dev/null)
+    
+    if [ -n "$new_stanza" ]; then
+        if [ -f "$target_file" ]; then
+            
+            local new_hash old_hash
+            
+            new_hash=$(echo "$new_stanza" | sha256sum | awk '{print $1}')
+            old_hash=$(sha256sum "$target_file" | awk '{print $1}')
+            
+            if [ "$new_hash" != "$old_hash" ]; then
+                echo "$new_stanza" > "$target_file"
+            fi
+            
+        else
+            echo "$new_stanza" > "$target_file"
+        fi
+    else
+        [ -f "$target_file" ] && rm -f "$target_file"
+        [ -f "${SAVE_LAYER}${target_file}" ] && rm -f "${SAVE_LAYER}${target_file}"
+    fi
+
+}
+
+# ---------------------------------------------------------------------------
+# Incremental Log Sync & Execution Flow
+# ---------------------------------------------------------------------------
+current_size=$(stat -c %s "$LOG_FILE" 2>/dev/null || echo 0)
+last_size=0
+
+[ -f "$OFFSET_FILE" ] && last_size=$(cat "$OFFSET_FILE")
+
+# Handle log rotation or truncation
+if [ "$current_size" -lt "$last_size" ]; then
+    last_size=0
+fi
+
+# Exit instantly if no new log activity
+[ "$current_size" -eq "$last_size" ] && exit 0
+
+echo "Perfoming dpkg status file audit..."
+
+declare -A pkgs_to_update
+declare -A pkgs_to_remove
+
+# Read newly appended lines from dpkg.log
+while read -r date time action pkg version extra; do
 
     [ -z "$pkg" ] && continue
 
-    if grep -q "^Package: $pkg$" "$STATUS_FILE"; then
-        if [ -f "$DPKG_DIR/info/${pkg}.list" ] || ls $DPKG_DIR/info/"${pkg}":* >/dev/null 2>&1; then
-           dpkg-query -s "$pkg" > "$OUT_DIR/$pkg"
-        else
-           [ -f "$OUT_DIR/$pkg" ] && rm -f "$OUT_DIR/$pkg"           
-        fi
-    else
-        [ -f "$OUT_DIR/$pkg" ] && rm -f "$OUT_DIR/$pkg"
-    fi
+    clean_pkg="$(echo $pkg | cut -f 1 -d ':')"
+    
+    case "$action" in
+        purge)
+        
+            # 1. CHECK FOR RESURFACED PACKAGES FIRST UPON REMOVAL INVOCATION
+            pkgs_to_remove["$pkg"]="$clean_pkg"
 
+            ;;
+        install|upgrade|configure|remove)
+            
+            pkgs_to_update["$pkg"]="$clean_pkg"
+            
+            ;;
+    esac
+done < <(tail -c +$((last_size + 1)) "$LOG_FILE" 2>/dev/null)
+
+# Save new byte offset
+echo "$current_size" > "$OFFSET_FILE"
+
+# 2. Handle Removals
+for pkg in "${!pkgs_to_remove[@]}"; do
+    clean_pkg="${pkgs_to_remove[$pkg]}"
+    target_file="$STATUS_DIR/$clean_pkg"
+    [ -f "$target_file" ] && rm -f "$target_file"
+    [ -f "${SAVE_LAYER}${target_file}" ] && rm -f "${SAVE_LAYER}${target_file}"
+    handle_resurfaced_on_removal "$clean_pkg"
+done
+
+# 3. Handle Additions and Updates
+for pkg in "${!pkgs_to_update[@]}"; do
+    refresh_package "$pkg"
 done

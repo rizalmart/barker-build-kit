@@ -1,54 +1,392 @@
-#!/usr/bin/bash
-set -e
 
-echo "[+] Updating apt repositories and installing build dependencies..."
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-apt-get install -y \
-    git \
-    curl \
+# ============================================================
+# SysD Manager 2.23.0
+# Build from source and install on Debian Sid
+# ============================================================
+
+VERSION="2.23.0"
+REPO="https://github.com/plrigaux/sysd-manager.git"
+SOURCE_DIR="${SOURCE_DIR:-$HOME/src/sysd-manager}"
+
+PREFIX="/usr/local"
+BINDIR="$PREFIX/bin"
+DATADIR="$PREFIX/share"
+LIBDIR="$PREFIX/lib"
+
+APP_ID="io.github.plrigaux.sysd-manager"
+BUS_ID="io.github.plrigaux.SysDManager"
+PROXY_ID="sysd-manager-proxy"
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+info() {
+    printf '\033[1;32m[INFO]\033[0m %s\n' "$*"
+}
+
+error() {
+    printf '\033[1;31m[ERROR]\033[0m %s\n' "$*" >&2
+    exit 1
+}
+
+run_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+install_file() {
+    local mode="$1"
+    local source="$2"
+    local destination="$3"
+
+    [ -f "$source" ] || error "Missing source file: $source"
+
+    run_root install -Dm"$mode" "$source" "$destination"
+}
+
+# ------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------
+
+info "Installing build dependencies..."
+
+run_root apt-get update
+
+run_root env DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends \
     build-essential \
+    git \
+    ca-certificates \
     pkg-config \
-    libglib2.0-dev \
+    cargo \
+    rustc \
+    gettext \
     libgtk-4-dev \
-    libgtksourceview-5-dev \
     libadwaita-1-dev \
-    libsystemd-dev
+    libsystemd-dev \
+    libgtksourceview-5-dev \
+    libglib2.0-bin \
+    desktop-file-utils \
+    dbus \
+    polkitd \
+    systemd
 
-# Ensure Rust/Cargo is available in root environment
-if [ -f "$HOME/.cargo/env" ]; then
-    source "$HOME/.cargo/env"
-elif [ -f "/root/.cargo/env" ]; then
-    source "/root/.cargo/env"
+# ------------------------------------------------------------
+# Rust version check
+# ------------------------------------------------------------
+
+RUST_VERSION="$(rustc --version | awk '{print $2}')"
+
+info "Rust version: $RUST_VERSION"
+
+if ! dpkg --compare-versions "$RUST_VERSION" ge "1.95.0"; then
+    error "SysD Manager $VERSION requires Rust 1.95 or newer."
 fi
 
-if ! command -v cargo &> /dev/null; then
-    echo "[+] Rust/Cargo not found. Installing via rustup..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+# ------------------------------------------------------------
+# Clone source
+# ------------------------------------------------------------
+
+mkdir -p "$(dirname "$SOURCE_DIR")"
+
+if [ -d "$SOURCE_DIR/.git" ]; then
+    info "Updating source repository..."
+
+    git -C "$SOURCE_DIR" fetch --tags
+
+    git -C "$SOURCE_DIR" checkout "$VERSION"
+
+    git -C "$SOURCE_DIR" pull --ff-only origin "$VERSION" \
+        2>/dev/null || true
+else
+    info "Cloning SysD Manager $VERSION..."
+
+    git clone \
+        --depth 1 \
+        --branch "$VERSION" \
+        "$REPO" \
+        "$SOURCE_DIR"
 fi
 
-WORK_DIR=$(mktemp -d)
-cd "$WORK_DIR"
+cd "$SOURCE_DIR"
 
-echo "[+] Cloning plrigaux/sysd-manager repository..."
-git clone https://github.com/plrigaux/sysd-manager.git
-cd sysd-manager
+# ------------------------------------------------------------
+# Verify source version
+# ------------------------------------------------------------
 
-echo "[+] Building sysd-manager in release mode..."
-cargo build --release
+SOURCE_VERSION="$(
+    sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml |
+    head -n 1
+)"
 
-echo "[+] Installing files to /usr/local..."
-install -Dm755 "target/release/sysd-manager" "/usr/local/bin/sysd-manager"
+[ "$SOURCE_VERSION" = "$VERSION" ] ||
+    error "Expected version $VERSION, found $SOURCE_VERSION"
 
-install -vDm644 "target/loc/io.github.plrigaux.sysd-manager.desktop" -t "/usr/local/share/applications"
-install -vDm644 "target/loc/io.github.plrigaux.sysd-manager.metainfo.xml" -t "/usr/local/share/metainfo"
-install -vDm644 "data/metainfo/io.github.plrigaux.sysd-manager.releases.xml" -t "/usr/local/share/metainfo/releases"
-install -vDm644 "data/icons/hicolor/scalable/apps/io.github.plrigaux.sysd-manager.svg" -t "/usr/local/share/icons/hicolor/scalable/apps/"
-install -vDm644 "data/schemas/io.github.plrigaux.sysd-manager.gschema.xml" -t "/usr/local/share/glib-2.0/schemas"   
-install -vDm644 "data/applications/org.freedesktop.policykit.sysd-manager.policy" -t "/usr/local/share/polkit-1/actions/"
-cp -r -v "target/locale"  "/usr/local/share/" 
+# ------------------------------------------------------------
+# Compile main application
+# ------------------------------------------------------------
 
-cd /
-rm -rf "$WORK_DIR"
+info "Compiling SysD Manager..."
 
-echo "[SUCCESS] sysd-manager compiled and installed cleanly to /usr/local!"
+cargo build \
+    --release \
+    --locked
+
+# ------------------------------------------------------------
+# Compile proxy
+# ------------------------------------------------------------
+
+info "Compiling SysD Manager Proxy..."
+
+cargo build \
+    --release \
+    --locked \
+    --manifest-path sysd-manager-proxy/Cargo.toml
+
+# ------------------------------------------------------------
+# Generate installation files and translations
+# ------------------------------------------------------------
+
+info "Generating desktop integration and translations..."
+
+cargo run \
+    --release \
+    --locked \
+    -p transtools \
+    -- packfiles
+
+# ------------------------------------------------------------
+# Verify build artifacts
+# ------------------------------------------------------------
+
+BUILD_DIR="target/release"
+
+[ -x "$BUILD_DIR/sysd-manager" ] ||
+    error "Main executable missing."
+
+[ -x "$BUILD_DIR/sysd-manager-proxy" ] ||
+    error "Proxy executable missing."
+
+[ -d target/locale ] ||
+    error "Generated locale directory missing."
+
+# ------------------------------------------------------------
+# Install executables
+# ------------------------------------------------------------
+
+info "Installing executables..."
+
+install_file 0755 \
+    "$BUILD_DIR/sysd-manager" \
+    "$BINDIR/sysd-manager"
+
+install_file 0755 \
+    "$BUILD_DIR/sysd-manager-proxy" \
+    "$BINDIR/sysd-manager-proxy"
+
+# ------------------------------------------------------------
+# Desktop entry
+# ------------------------------------------------------------
+
+info "Installing desktop entry..."
+
+install_file 0644 \
+    target/loc/$APP_ID.desktop \
+    "$DATADIR/applications/$APP_ID.desktop"
+
+# ------------------------------------------------------------
+# D-Bus configuration
+# ------------------------------------------------------------
+
+info "Installing D-Bus configuration..."
+
+DBUS_TEMPLATE="sysd-manager-proxy/data/$BUS_ID.conf"
+
+DBUS_TEMP="$(mktemp)"
+trap 'rm -f "$DBUS_TEMP"' EXIT
+
+sed \
+    -e "s|{BUS_NAME}|$BUS_ID|g" \
+    -e "s|{DESTINATION}|$BUS_ID|g" \
+    -e "s|{INTERFACE}|$BUS_ID|g" \
+    "$DBUS_TEMPLATE" > "$DBUS_TEMP"
+
+install_file 0644 \
+    "$DBUS_TEMP" \
+    "$DATADIR/dbus-1/system.d/$BUS_ID.conf"
+
+# ------------------------------------------------------------
+# Systemd service
+# ------------------------------------------------------------
+
+info "Installing systemd proxy service..."
+
+SERVICE_TEMPLATE="sysd-manager-proxy/data/sysd-manager-proxy.service"
+
+SERVICE_TEMP="$(mktemp)"
+
+sed \
+    -e "s|{SERVICE_ID}|$PROXY_ID|g" \
+    -e "s|{DESTINATION}|$BUS_ID|g" \
+    -e "s|{EXECUTABLE}|$BINDIR/$PROXY_ID|g" \
+    -e "s|{INTERFACE}|$BUS_ID|g" \
+    -e "s|{ENVIRONMENT}||g" \
+    "$SERVICE_TEMPLATE" > "$SERVICE_TEMP"
+
+install_file 0644 \
+    "$SERVICE_TEMP" \
+    "$LIBDIR/systemd/system/$PROXY_ID.service"
+
+rm -f "$SERVICE_TEMP"
+
+# ------------------------------------------------------------
+# GSettings schema
+# ------------------------------------------------------------
+
+info "Installing GSettings schema..."
+
+install_file 0644 \
+    "data/schemas/$APP_ID.gschema.xml" \
+    "$DATADIR/glib-2.0/schemas/$APP_ID.gschema.xml"
+
+# ------------------------------------------------------------
+# Application icon
+# ------------------------------------------------------------
+
+info "Installing application icon..."
+
+install_file 0644 \
+    "data/icons/hicolor/scalable/apps/$APP_ID.svg" \
+    "$DATADIR/icons/hicolor/scalable/apps/$APP_ID.svg"
+
+# ------------------------------------------------------------
+# AppStream metadata
+# ------------------------------------------------------------
+
+info "Installing AppStream metadata..."
+
+install_file 0644 \
+    "target/loc/$APP_ID.metainfo.xml" \
+    "$DATADIR/metainfo/$APP_ID.metainfo.xml"
+
+install_file 0644 \
+    "data/metainfo/$APP_ID.releases.xml" \
+    "$DATADIR/metainfo/releases/$APP_ID.releases.xml"
+
+# ------------------------------------------------------------
+# Polkit policy
+# ------------------------------------------------------------
+
+info "Installing Polkit policy..."
+
+install_file 0644 \
+    "target/loc/$BUS_ID.policy" \
+    "$DATADIR/polkit-1/actions/$BUS_ID.policy"
+
+# ------------------------------------------------------------
+# Translations
+# ------------------------------------------------------------
+
+info "Installing translations..."
+
+while IFS= read -r -d '' MO_FILE; do
+    RELATIVE_PATH="${MO_FILE#target/locale/}"
+
+    install_file 0644 \
+        "$MO_FILE" \
+        "$DATADIR/locale/$RELATIVE_PATH"
+
+done < <(find target/locale -type f -name '*.mo' -print0)
+
+# ------------------------------------------------------------
+# Documentation
+# ------------------------------------------------------------
+
+info "Installing documentation..."
+
+DOC_DIR="$DATADIR/doc/sysd-manager-$VERSION"
+
+install_file 0644 \
+    README.md \
+    "$DOC_DIR/README.md"
+
+install_file 0644 \
+    CHANGELOG.md \
+    "$DOC_DIR/CHANGELOG.md"
+
+# ------------------------------------------------------------
+# Refresh system integration
+# ------------------------------------------------------------
+
+info "Compiling GSettings schemas..."
+
+run_root glib-compile-schemas \
+    "$DATADIR/glib-2.0/schemas"
+
+info "Updating desktop database..."
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    run_root update-desktop-database \
+        "$DATADIR/applications"
+fi
+
+info "Updating icon cache..."
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    run_root gtk-update-icon-cache -f \
+        "$DATADIR/icons/hicolor" || true
+fi
+
+info "Reloading systemd..."
+
+run_root systemctl daemon-reload
+
+# ------------------------------------------------------------
+# Installation verification
+# ------------------------------------------------------------
+
+info "Verifying installation..."
+
+EXPECTED_FILES=(
+    "$BINDIR/sysd-manager"
+    "$BINDIR/sysd-manager-proxy"
+    "$LIBDIR/systemd/system/$PROXY_ID.service"
+    "$DATADIR/applications/$APP_ID.desktop"
+    "$DATADIR/dbus-1/system.d/$BUS_ID.conf"
+    "$DATADIR/doc/sysd-manager-$VERSION/README.md"
+    "$DATADIR/doc/sysd-manager-$VERSION/CHANGELOG.md"
+    "$DATADIR/glib-2.0/schemas/$APP_ID.gschema.xml"
+    "$DATADIR/icons/hicolor/scalable/apps/$APP_ID.svg"
+    "$DATADIR/metainfo/$APP_ID.metainfo.xml"
+    "$DATADIR/metainfo/releases/$APP_ID.releases.xml"
+    "$DATADIR/polkit-1/actions/$BUS_ID.policy"
+)
+
+FAILED=0
+
+for FILE in "${EXPECTED_FILES[@]}"; do
+    if [ -f "$FILE" ]; then
+        info "OK: $FILE"
+    else
+        printf '\033[1;31m[MISSING]\033[0m %s\n' "$FILE"
+        FAILED=1
+    fi
+done
+
+[ "$FAILED" -eq 0 ] ||
+    error "Installation verification failed."
+
+echo
+info "SysD Manager $VERSION successfully installed!"
+info "Executable: $BINDIR/sysd-manager"
+info "Proxy:      $BINDIR/sysd-manager-proxy"
+info "Prefix:     $PREFIX"
+echo
+info "Launch using: sysd-manager"

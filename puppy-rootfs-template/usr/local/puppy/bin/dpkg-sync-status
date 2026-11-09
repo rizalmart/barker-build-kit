@@ -7,7 +7,7 @@ OFFSET_FILE="/var/lib/dpkg/status_sync_offset"
 STATUS_DIR="/var/lib/dpkg/installed"
 MASTER_STATUS="/var/lib/dpkg/status"
 
-LAYERED_ROOTFS="$(mount | grep "on / type" | grep -E "aufs")"
+LAYERED_ROOTFS="$(mount | grep -m 1 "on / type" | grep "aufs")"
 
 RO_LAYER=""
 RW_LAYER=""

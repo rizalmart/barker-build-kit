@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # ============================================================
-# SysD Manager 2.23.0
+# SysD Manager - Main Branch
 # Build from source and install on Debian Sid
+# Installation prefix: /usr/local
 # ============================================================
 
-VERSION="2.24.6"
 REPO="https://github.com/plrigaux/sysd-manager.git"
+BRANCH="main"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/sysd-manager}"
 
 PREFIX="/usr/local"
 BINDIR="$PREFIX/bin"
 DATADIR="$PREFIX/share"
 LIBDIR="$PREFIX/lib"
+
+# System integration directories
+# These locations are used by Debian system services.
+DBUS_DIR="/usr/local/share/dbus-1/system.d"
+POLKIT_ACTION_DIR="/usr/local/share/polkit-1/actions"
+POLKIT_RULE_DIR="/usr/local/share/polkit-1/rules.d"
 
 APP_ID="io.github.plrigaux.sysd-manager"
 BUS_ID="io.github.plrigaux.SysDManager"
@@ -78,38 +85,33 @@ run_root env DEBIAN_FRONTEND=noninteractive \
     systemd
 
 # ------------------------------------------------------------
-# Rust version check
-# ------------------------------------------------------------
-
-RUST_VERSION="$(rustc --version | awk '{print $2}')"
-
-info "Rust version: $RUST_VERSION"
-
-if ! dpkg --compare-versions "$RUST_VERSION" ge "1.95.0"; then
-    error "SysD Manager $VERSION requires Rust 1.95 or newer."
-fi
-
-# ------------------------------------------------------------
-# Clone source
+# Clone or update main branch
 # ------------------------------------------------------------
 
 mkdir -p "$(dirname "$SOURCE_DIR")"
 
 if [ -d "$SOURCE_DIR/.git" ]; then
-    info "Updating source repository..."
+    info "Updating repository from $BRANCH..."
 
-    git -C "$SOURCE_DIR" fetch --tags
+    git -C "$SOURCE_DIR" fetch origin "$BRANCH"
 
-    git -C "$SOURCE_DIR" checkout "$VERSION"
+    if git -C "$SOURCE_DIR" show-ref \
+        --verify --quiet refs/heads/"$BRANCH"; then
+        git -C "$SOURCE_DIR" switch "$BRANCH"
+    else
+        git -C "$SOURCE_DIR" switch \
+            -c "$BRANCH" --track "origin/$BRANCH"
+    fi
 
-    git -C "$SOURCE_DIR" pull --ff-only origin "$VERSION" \
-        2>/dev/null || true
+    git -C "$SOURCE_DIR" pull --ff-only origin "$BRANCH"
+
 else
-    info "Cloning SysD Manager $VERSION..."
+    info "Cloning upstream $BRANCH branch..."
 
     git clone \
         --depth 1 \
-        --branch "$VERSION" \
+        --single-branch \
+        --branch "$BRANCH" \
         "$REPO" \
         "$SOURCE_DIR"
 fi
@@ -117,53 +119,59 @@ fi
 cd "$SOURCE_DIR"
 
 # ------------------------------------------------------------
-# Verify source version
+# Detect version and minimum Rust version
 # ------------------------------------------------------------
 
-SOURCE_VERSION="$(
-    sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml |
-    head -n 1
+VERSION="$(
+    awk '
+        /^\[package\]/ { package=1; next }
+        /^\[/ { if (package) exit }
+        package && /^version[[:space:]]*=/ {
+            gsub(/"/, "", $3)
+            print $3
+            exit
+        }
+    ' Cargo.toml
 )"
 
-[ "$SOURCE_VERSION" = "$VERSION" ] ||
-    error "Expected version $VERSION, found $SOURCE_VERSION"
+RUST_REQUIRED="$(
+    awk '
+        /^\[workspace.package\]/ { section=1; next }
+        /^\[/ { if (section) exit }
+        section && /^rust-version[[:space:]]*=/ {
+            gsub(/"/, "", $3)
+            print $3
+            exit
+        }
+    ' Cargo.toml
+)"
+
+[ -n "$VERSION" ] ||
+    error "Unable to detect project version."
+
+[ -n "$RUST_REQUIRED" ] ||
+    error "Unable to detect minimum Rust version."
+
+RUST_VERSION="$(rustc --version | awk '{print $2}')"
+
+info "SysD Manager version: $VERSION"
+info "Required Rust: $RUST_REQUIRED"
+info "Installed Rust: $RUST_VERSION"
+
+if ! dpkg --compare-versions "$RUST_VERSION" ge "$RUST_REQUIRED"; then
+    error "Rust $RUST_REQUIRED or newer is required."
+fi
 
 # ------------------------------------------------------------
-# Compile main application
+# Compile application and proxy
 # ------------------------------------------------------------
 
-info "Compiling SysD Manager..."
+info "Compiling SysD Manager and workspace..."
 
 cargo build \
+    --workspace \
     --release \
     --locked
-
-# ------------------------------------------------------------
-# Compile proxy
-# ------------------------------------------------------------
-
-info "Compiling SysD Manager Proxy..."
-
-cargo build \
-    --release \
-    --locked \
-    --manifest-path sysd-manager-proxy/Cargo.toml
-
-# ------------------------------------------------------------
-# Generate installation files and translations
-# ------------------------------------------------------------
-
-info "Generating desktop integration and translations..."
-
-cargo run \
-    --release \
-    --locked \
-    -p transtools \
-    -- packfiles
-
-# ------------------------------------------------------------
-# Verify build artifacts
-# ------------------------------------------------------------
 
 BUILD_DIR="target/release"
 
@@ -173,8 +181,36 @@ BUILD_DIR="target/release"
 [ -x "$BUILD_DIR/sysd-manager-proxy" ] ||
     error "Proxy executable missing."
 
+# ------------------------------------------------------------
+# Generate desktop integration and translations
+# ------------------------------------------------------------
+
+info "Generating application integration files..."
+
+cargo run \
+    --locked \
+    -p transtools \
+    -- packfiles
+
 [ -d target/locale ] ||
     error "Generated locale directory missing."
+
+[ -f "target/loc/$APP_ID.desktop" ] ||
+    error "Generated desktop entry missing."
+
+[ -f "target/loc/$APP_ID.metainfo.xml" ] ||
+    error "Generated AppStream metadata missing."
+
+[ -f "target/loc/$BUS_ID.policy" ] ||
+    error "Generated Polkit policy missing."
+
+# ------------------------------------------------------------
+# Create temporary directory
+# ------------------------------------------------------------
+
+TMP_DIR="$(mktemp -d)"
+
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 # ------------------------------------------------------------
 # Install executables
@@ -187,8 +223,8 @@ install_file 0755 \
     "$BINDIR/sysd-manager"
 
 install_file 0755 \
-    "$BUILD_DIR/sysd-manager-proxy" \
-    "$BINDIR/sysd-manager-proxy"
+    "$BUILD_DIR/$PROXY_ID" \
+    "$BINDIR/$PROXY_ID"
 
 # ------------------------------------------------------------
 # Desktop entry
@@ -197,7 +233,7 @@ install_file 0755 \
 info "Installing desktop entry..."
 
 install_file 0644 \
-    target/loc/$APP_ID.desktop \
+    "target/loc/$APP_ID.desktop" \
     "$DATADIR/applications/$APP_ID.desktop"
 
 # ------------------------------------------------------------
@@ -208,18 +244,16 @@ info "Installing D-Bus configuration..."
 
 DBUS_TEMPLATE="sysd-manager-proxy/data/$BUS_ID.conf"
 
-DBUS_TEMP="$(mktemp)"
-trap 'rm -f "$DBUS_TEMP"' EXIT
-
 sed \
     -e "s|{BUS_NAME}|$BUS_ID|g" \
     -e "s|{DESTINATION}|$BUS_ID|g" \
     -e "s|{INTERFACE}|$BUS_ID|g" \
-    "$DBUS_TEMPLATE" > "$DBUS_TEMP"
+    "$DBUS_TEMPLATE" \
+    > "$TMP_DIR/$BUS_ID.conf"
 
 install_file 0644 \
-    "$DBUS_TEMP" \
-    "$DATADIR/dbus-1/system.d/$BUS_ID.conf"
+    "$TMP_DIR/$BUS_ID.conf" \
+    "$DBUS_DIR/$BUS_ID.conf"
 
 # ------------------------------------------------------------
 # Systemd service
@@ -227,9 +261,7 @@ install_file 0644 \
 
 info "Installing systemd proxy service..."
 
-SERVICE_TEMPLATE="sysd-manager-proxy/data/sysd-manager-proxy.service"
-
-SERVICE_TEMP="$(mktemp)"
+SERVICE_TEMPLATE="sysd-manager-proxy/data/$PROXY_ID.service"
 
 sed \
     -e "s|{SERVICE_ID}|$PROXY_ID|g" \
@@ -237,13 +269,12 @@ sed \
     -e "s|{EXECUTABLE}|$BINDIR/$PROXY_ID|g" \
     -e "s|{INTERFACE}|$BUS_ID|g" \
     -e "s|{ENVIRONMENT}||g" \
-    "$SERVICE_TEMPLATE" > "$SERVICE_TEMP"
+    "$SERVICE_TEMPLATE" \
+    > "$TMP_DIR/$PROXY_ID.service"
 
 install_file 0644 \
-    "$SERVICE_TEMP" \
+    "$TMP_DIR/$PROXY_ID.service" \
     "$LIBDIR/systemd/system/$PROXY_ID.service"
-
-rm -f "$SERVICE_TEMP"
 
 # ------------------------------------------------------------
 # GSettings schema
@@ -287,7 +318,19 @@ info "Installing Polkit policy..."
 
 install_file 0644 \
     "target/loc/$BUS_ID.policy" \
-    "$DATADIR/polkit-1/actions/$BUS_ID.policy"
+    "$POLKIT_ACTION_DIR/$BUS_ID.policy"
+
+# ------------------------------------------------------------
+# Polkit rules
+# ------------------------------------------------------------
+
+info "Installing Polkit rules..."
+
+POLKIT_RULE="sysd-manager-proxy/data/50-$BUS_ID.rules"
+
+install_file 0644 \
+    "$POLKIT_RULE" \
+    "$POLKIT_RULE_DIR/50-$BUS_ID.rules"
 
 # ------------------------------------------------------------
 # Translations
@@ -296,6 +339,7 @@ install_file 0644 \
 info "Installing translations..."
 
 while IFS= read -r -d '' MO_FILE; do
+
     RELATIVE_PATH="${MO_FILE#target/locale/}"
 
     install_file 0644 \
@@ -355,17 +399,18 @@ info "Verifying installation..."
 
 EXPECTED_FILES=(
     "$BINDIR/sysd-manager"
-    "$BINDIR/sysd-manager-proxy"
+    "$BINDIR/$PROXY_ID"
     "$LIBDIR/systemd/system/$PROXY_ID.service"
     "$DATADIR/applications/$APP_ID.desktop"
-    "$DATADIR/dbus-1/system.d/$BUS_ID.conf"
-    "$DATADIR/doc/sysd-manager-$VERSION/README.md"
-    "$DATADIR/doc/sysd-manager-$VERSION/CHANGELOG.md"
+    "$DBUS_DIR/$BUS_ID.conf"
+    "$DOC_DIR/README.md"
+    "$DOC_DIR/CHANGELOG.md"
     "$DATADIR/glib-2.0/schemas/$APP_ID.gschema.xml"
     "$DATADIR/icons/hicolor/scalable/apps/$APP_ID.svg"
     "$DATADIR/metainfo/$APP_ID.metainfo.xml"
     "$DATADIR/metainfo/releases/$APP_ID.releases.xml"
-    "$DATADIR/polkit-1/actions/$BUS_ID.policy"
+    "$POLKIT_ACTION_DIR/$BUS_ID.policy"
+    "$POLKIT_RULE_DIR/50-$BUS_ID.rules"
 )
 
 FAILED=0
@@ -383,9 +428,12 @@ done
     error "Installation verification failed."
 
 echo
-info "SysD Manager $VERSION successfully installed!"
+info "============================================"
+info " SysD Manager $VERSION installed successfully"
+info "============================================"
+info "Branch:     $BRANCH"
 info "Executable: $BINDIR/sysd-manager"
-info "Proxy:      $BINDIR/sysd-manager-proxy"
+info "Proxy:      $BINDIR/$PROXY_ID"
 info "Prefix:     $PREFIX"
 echo
 info "Launch using: sysd-manager"

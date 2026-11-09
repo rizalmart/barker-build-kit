@@ -6,7 +6,7 @@ set -euo pipefail
 # Build from source and install on Debian Sid
 # ============================================================
 
-VERSION="main"
+VERSION="2.24.6"
 REPO="https://github.com/plrigaux/sysd-manager.git"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/sysd-manager}"
 

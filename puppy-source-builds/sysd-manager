@@ -1,0 +1,73 @@
+#!/usr/bin/bash
+set -e
+
+echo "[+] Updating apt repositories and installing build dependencies..."
+
+apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    pkg-config \
+    libglib2.0-dev \
+    libgtk-4-dev \
+    libgtksourceview-5-dev
+
+# Ensure Rust/Cargo is available in root environment
+if [ -f "$HOME/.cargo/env" ]; then
+    source "$HOME/.cargo/env"
+elif [ -f "/root/.cargo/env" ]; then
+    source "/root/.cargo/env"
+fi
+
+if ! command -v cargo &> /dev/null; then
+    echo "[+] Rust/Cargo not found. Installing via rustup..."
+    curl --proto '=https' --tlslv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    source "$HOME/.cargo/env"
+fi
+
+WORK_DIR=$(mktemp -d)
+cd "$WORK_DIR"
+
+echo "[+] Cloning plrigaux/sysd-manager repository..."
+git clone https://github.com/plrigaux/sysd-manager.git
+cd sysd-manager
+
+echo "[+] Building sysd-manager in release mode..."
+cargo build --release
+
+echo "[+] Installing binary to /usr/local/bin..."
+install -Dm755 "target/release/sysd-manager" "/usr/local/bin/sysd-manager"
+
+echo "[+] Installing desktop entry and icons to /usr/local/share..."
+# Create application desktop entry under /usr/local/share/applications
+install -Dm644 /dev/stdin "/usr/local/share/applications/io.github.plrigaux.sysd-manager.desktop" << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=SysD Manager
+Comment=Graphical manager for systemd services
+Exec=sysd-manager
+Icon=io.github.plrigaux.sysd-manager
+Terminal=false
+Categories=System;Settings;
+StartupNotify=true
+EOF
+
+# Install icons to local hicolor theme hierarchy, fallback to system-run if missing
+if [ -d "data/icons" ]; then
+    for icon_dir in data/icons/hicolor/*; do
+        if [ -d "$icon_dir" ]; then
+            res=$(basename "$icon_dir")
+            mkdir -p "/usr/local/share/icons/hicolor/$res/apps"
+            cp -f "$icon_dir/apps/"* "/usr/local/share/icons/hicolor/$res/apps/" 2>/dev/null || true
+        fi
+    done
+    update-desktop-database -q /usr/local/share/applications 2>/dev/null || true
+    gtk-update-icon-cache -q /usr/local/share/icons/hicolor 2>/dev/null || true
+else
+    sed -i 's/Icon=.*/Icon=system-run/' "/usr/local/share/applications/io.github.plrigaux.sysd-manager.desktop"
+fi
+
+cd /
+rm -rf "$WORK_DIR"
+
+echo "[SUCCESS] sysd-manager compiled and installed cleanly to /usr/local!"

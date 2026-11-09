@@ -37,37 +37,16 @@ cd sysd-manager
 echo "[+] Building sysd-manager in release mode..."
 cargo build --release
 
-echo "[+] Installing binary to /usr/local/bin..."
+echo "[+] Installing files to /usr/local..."
 install -Dm755 "target/release/sysd-manager" "/usr/local/bin/sysd-manager"
 
-echo "[+] Installing desktop entry and icons to /usr/local/share..."
-# Create application desktop entry under /usr/local/share/applications
-install -Dm644 /dev/stdin "/usr/local/share/applications/io.github.plrigaux.sysd-manager.desktop" << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=SysD Manager
-Comment=Graphical manager for systemd services
-Exec=sysd-manager
-Icon=io.github.plrigaux.sysd-manager
-Terminal=false
-Categories=System;Settings;
-StartupNotify=true
-EOF
-
-# Install icons to local hicolor theme hierarchy, fallback to system-run if missing
-if [ -d "data/icons" ]; then
-    for icon_dir in data/icons/hicolor/*; do
-        if [ -d "$icon_dir" ]; then
-            res=$(basename "$icon_dir")
-            mkdir -p "/usr/local/share/icons/hicolor/$res/apps"
-            cp -f "$icon_dir/apps/"* "/usr/local/share/icons/hicolor/$res/apps/" 2>/dev/null || true
-        fi
-    done
-    update-desktop-database -q /usr/local/share/applications 2>/dev/null || true
-    gtk-update-icon-cache -q /usr/local/share/icons/hicolor 2>/dev/null || true
-else
-    sed -i 's/Icon=.*/Icon=system-run/' "/usr/local/share/applications/io.github.plrigaux.sysd-manager.desktop"
-fi
+install -vDm644 "target/loc/io.github.plrigaux.sysd-manager.desktop" -t "/usr/local/share/applications"
+install -vDm644 "target/loc/io.github.plrigaux.sysd-manager.metainfo.xml" -t "/usr/local/share/metainfo"
+install -vDm644 "data/metainfo/io.github.plrigaux.sysd-manager.releases.xml" -t "/usr/local/share/metainfo/releases"
+install -vDm644 "data/icons/hicolor/scalable/apps/io.github.plrigaux.sysd-manager.svg" -t "/usr/local/share/icons/hicolor/scalable/apps/"
+install -vDm644 "data/schemas/io.github.plrigaux.sysd-manager.gschema.xml" -t "/usr/local/share/glib-2.0/schemas"   
+install -vDm644 "data/applications/org.freedesktop.policykit.sysd-manager.policy" -t "/usr/local/share/polkit-1/actions/"
+cp -r -v "target/locale"  "/usr/local/share/" 
 
 cd /
 rm -rf "$WORK_DIR"

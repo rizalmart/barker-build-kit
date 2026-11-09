@@ -13,8 +13,8 @@ RO_LAYER=""
 RW_LAYER=""
 
 if [ "$LAYERED_ROOTFS" != "" ]; then
-  RO_LAYER="/initrd${PUP_LAYER}"
-  RW_LAYER="/initrd/pup_rw"
+  RO_LAYER="/run/initramfs${PUP_LAYER}"
+  RW_LAYER="/run/initramfs/pup_rw"
 fi
 
 [ -d "$STATUS_DIR" ] || mkdir -p "$STATUS_DIR"

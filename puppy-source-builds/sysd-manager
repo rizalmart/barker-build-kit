@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 
 # ============================================================
 # SysD Manager 2.23.0
 # Build from source and install on Debian Sid
 # ============================================================
 
-VERSION="2.23.0"
+VERSION="main"
 REPO="https://github.com/plrigaux/sysd-manager.git"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/sysd-manager}"
 

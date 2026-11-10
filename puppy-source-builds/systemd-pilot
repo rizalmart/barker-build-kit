@@ -156,30 +156,12 @@ run_tests() {
 # ------------------------------------------------------------
 
 install_application() {
+
     echo
     echo "==> Installing ${APP_NAME} to /usr/local..."
 
     run_root meson install -C "$BUILD_DIR"
 
-    echo
-    echo "==> Updating desktop and icon caches..."
-
-    if command -v update-desktop-database >/dev/null 2>&1; then
-        run_root update-desktop-database \
-            /usr/local/share/applications || true
-    fi
-
-    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-        run_root gtk-update-icon-cache \
-            -f -t /usr/local/share/icons/hicolor || true
-    fi
-
-    if command -v glib-compile-schemas >/dev/null 2>&1; then
-        if [[ -d /usr/local/share/glib-2.0/schemas ]]; then
-            run_root glib-compile-schemas \
-                /usr/local/share/glib-2.0/schemas
-        fi
-    fi
 }
 
 # ------------------------------------------------------------

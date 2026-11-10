@@ -400,3 +400,5 @@ appstream
 python3-gi
 gir1.2-secret-1
 gir1.2-gtksource-5
+libsecret-1-0
+libgtksourceview-5-0

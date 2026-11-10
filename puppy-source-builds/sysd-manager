@@ -71,18 +71,26 @@ run_root env DEBIAN_FRONTEND=noninteractive \
     git \
     ca-certificates \
     pkg-config \
-    cargo \
-    rustc \
     gettext \
     libgtk-4-dev \
     libadwaita-1-dev \
     libsystemd-dev \
     libgtksourceview-5-dev \
     libglib2.0-bin \
-    desktop-file-utils \
-    dbus \
-    polkitd \
-    systemd
+    desktop-file-utils
+
+# Ensure Rust/Cargo is available in root environment
+if [ -f "$HOME/.cargo/env" ]; then
+    source "$HOME/.cargo/env"
+elif [ -f "/root/.cargo/env" ]; then
+    source "/root/.cargo/env"
+fi
+
+if ! command -v cargo &> /dev/null; then
+    echo "[+] Rust/Cargo not found. Installing via rustup..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+fi
 
 # ------------------------------------------------------------
 # Clone or update main branch

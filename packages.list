@@ -394,3 +394,9 @@ grub-efi-amd64-bin
 grub-common
 libimobiledevice-utils
 ifuse
+python3-paramiko
+desktop-file-utils
+appstream
+python3-gi
+gir1.2-secret-1
+gir1.2-gtksource-5

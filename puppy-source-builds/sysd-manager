@@ -162,6 +162,28 @@ if ! dpkg --compare-versions "$RUST_VERSION" ge "$RUST_REQUIRED"; then
     error "Rust $RUST_REQUIRED or newer is required."
 fi
 
+
+# ------------------------------------------------------------
+# Fix upstream single_selection typo
+# ------------------------------------------------------------
+
+info "Checking upstream single_selection source..."
+
+UNIT_LIST_SOURCE="src/widget/unit_list/imp.rs"
+
+if grep -q 'single_selection.set_selected(gtk::INVALID_LIST_POSITION)' \
+    "$UNIT_LIST_SOURCE"; then
+
+    info "Applying single_selection accessor fix..."
+
+    sed -i \
+        's/single_selection\.set_selected(gtk::INVALID_LIST_POSITION)/self.single_selection().set_selected(gtk::INVALID_LIST_POSITION)/g' \
+        "$UNIT_LIST_SOURCE"
+else
+    info "No single_selection typo detected."
+fi
+
+
 # ------------------------------------------------------------
 # Compile application and proxy
 # ------------------------------------------------------------

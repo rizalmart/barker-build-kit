@@ -10,19 +10,21 @@ if [ -d "/sys/class/drm" ]; then
     # Trigger software overrides on universal fallback / legacy drivers lacking proper 3D acceleration
     case "$DRV_NAME" in
         simpledrm|simple-framebuffer|vkms|bochnet|bochs-drm)
+        
             # Wlroots / Compositor Level
-            export WLR_RENDERER="${WLR_RENDERER:-pixman}"
-            export WLR_NO_HARDWARE_CURSORS="${WLR_NO_HARDWARE_CURSORS:-1}"
+            export WLR_RENDERER="pixman"
+            export WLR_NO_HARDWARE_CURSORS="1"
 
             # Mesa / Gallium3D Software Rasterization Level
-            export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
-            export GALLIUM_DRIVER="${GALLIUM_DRIVER:-llvmpipe}"
-            export LIBGL_DRI3_DISABLE="${LIBGL_DRI3_DISABLE:-1}"
+            export LIBGL_ALWAYS_SOFTWARE="1"
+            export GALLIUM_DRIVER="llvmpipe"
+            export LIBGL_DRI3_DISABLE="1"
 
             # Toolkit Level Fallbacks
-            export GDK_RENDERING="${GDK_RENDERING:-memory}"
-            export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
-            export VDPAU_DRIVER="${VDPAU_DRIVER:-none}"
+            export GDK_RENDERING="memory"
+            export QT_QUICK_BACKEND="software"
+            export VDPAU_DRIVER="none"
+
             ;;
     esac
 fi

@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+#
+# Build and install systemd-pilot from upstream
+# Installation prefix: /usr/local
+# Target: Debian Sid / Debian 13+
+#
+
+set -Eeuo pipefail
+
+REPO_URL="https://github.com/mfat/systemd-pilot.git"
+BRANCH="main"
+APP_NAME="systemd-pilot"
+
+BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}.XXXXXX")"
+SRC_DIR="${BUILD_ROOT}/src"
+BUILD_DIR="${BUILD_ROOT}/build"
+
+# ------------------------------------------------------------
+# Cleanup
+# ------------------------------------------------------------
+
+cleanup() {
+    rm -rf "$BUILD_ROOT"
+}
+
+trap cleanup EXIT
+
+# ------------------------------------------------------------
+# Root privilege helper
+# ------------------------------------------------------------
+
+run_root() {
+    if [[ "$(whoami)" == "root" ]]; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        echo "ERROR: Root privileges required. Install sudo or run as root."
+        exit 1
+    fi
+}
+
+# ------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------
+
+install_dependencies() {
+    local packages=(
+        git
+        meson
+        ninja-build
+        gettext
+        pkg-config
+        libglib2.0-dev-bin
+        desktop-file-utils
+        appstream
+
+        python3
+        python3-gi
+        python3-paramiko
+
+        gir1.2-gtk-4.0
+        gir1.2-adw-1
+        gir1.2-secret-1
+        gir1.2-gtksource-5
+
+        libsecret-1-0
+        libgtksourceview-5-0
+    )
+
+    echo "==> Installing build dependencies..."
+
+    run_root apt-get update
+    run_root apt-get install -y --no-install-recommends "${packages[@]}"
+}
+
+# ------------------------------------------------------------
+# Check build environment
+# ------------------------------------------------------------
+
+check_dependencies() {
+    local missing=0
+
+    for cmd in git meson ninja glib-compile-resources \
+               glib-compile-schemas msgfmt; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            echo "Missing command: $cmd"
+            missing=1
+        fi
+    done
+
+    if (( missing )); then
+        install_dependencies
+    fi
+}
+
+# ------------------------------------------------------------
+# Clone source
+# ------------------------------------------------------------
+
+clone_source() {
+    echo
+    echo "==> Cloning ${APP_NAME}..."
+
+    git clone \
+        --depth 1 \
+        --single-branch \
+        --branch "$BRANCH" \
+        "$REPO_URL" \
+        "$SRC_DIR"
+}
+
+# ------------------------------------------------------------
+# Configure Meson
+# ------------------------------------------------------------
+
+configure_build() {
+    echo
+    echo "==> Configuring Meson..."
+
+    meson setup \
+        "$BUILD_DIR" \
+        "$SRC_DIR" \
+        --prefix=/usr/local \
+        --buildtype=release
+}
+
+# ------------------------------------------------------------
+# Compile
+# ------------------------------------------------------------
+
+compile_source() {
+    echo
+    echo "==> Compiling ${APP_NAME}..."
+
+    meson compile \
+        -C "$BUILD_DIR" \
+        --verbose
+}
+
+# ------------------------------------------------------------
+# Run tests
+# ------------------------------------------------------------
+
+run_tests() {
+    echo
+    echo "==> Running tests..."
+
+    meson test \
+        -C "$BUILD_DIR" \
+        --print-errorlogs
+}
+
+# ------------------------------------------------------------
+# Install
+# ------------------------------------------------------------
+
+install_application() {
+
+    echo
+    echo "==> Installing ${APP_NAME} to /usr/local..."
+
+    run_root meson install -C "$BUILD_DIR"
+
+}
+
+# ------------------------------------------------------------
+# Main
+# ------------------------------------------------------------
+
+echo "========================================"
+echo " Building ${APP_NAME}"
+echo " Installation: /usr/local"
+echo "========================================"
+
+check_dependencies
+clone_source
+configure_build
+compile_source
+run_tests
+install_application
+
+echo
+echo "========================================"
+echo " Installation completed successfully!"
+echo "========================================"
+echo
+echo "Application: ${APP_NAME}"
+echo "Prefix:      /usr/local"
+echo
+echo "Launch using:"
+echo "  systemd-pilot"
+echo
